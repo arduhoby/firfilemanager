@@ -1,0 +1,296 @@
+{
+  "@@locale": "en",
+  "appTitle": "Fir File Manager",
+  "@appTitle": {
+    "description": "Application title"
+  },
+
+  "navLocal": "Local",
+  "@navLocal": {},
+  "navConnections": "Connections",
+  "@navConnections": {},
+  "navServer": "Server",
+  "@navServer": {},
+  "navSettings": "Settings",
+  "@navSettings": {},
+
+  "categoryImages": "Images",
+  "@categoryImages": {},
+  "categoryDocuments": "Documents",
+  "@categoryDocuments": {},
+  "categoryAudio": "Audio",
+  "@categoryAudio": {},
+  "categoryVideo": "Video",
+  "@categoryVideo": {},
+  "categoryDownloads": "Downloads",
+  "@categoryDownloads": {},
+  "categoryMainStorage": "Main Storage",
+  "@categoryMainStorage": {},
+
+  "actionCopy": "Copy",
+  "@actionCopy": {},
+  "actionMove": "Move",
+  "@actionMove": {},
+  "actionDelete": "Delete",
+  "@actionDelete": {},
+  "actionRename": "Rename",
+  "@actionRename": {},
+  "actionNewFolder": "New Folder",
+  "@actionNewFolder": {},
+  "actionPaste": "Paste",
+  "@actionPaste": {},
+  "actionSelectAll": "Select All",
+  "@actionSelectAll": {},
+  "actionRefresh": "Refresh",
+  "@actionRefresh": {},
+  "actionOpen": "Open",
+  "@actionOpen": {},
+  "actionProperties": "Properties",
+  "@actionProperties": {},
+  "actionOpenWith": "Open",
+  "@actionOpenWith": {},
+  "actionRevealInFinder": "Reveal in Finder",
+  "@actionRevealInFinder": {},
+  "actionCompress": "Compress",
+  "@actionCompress": {},
+  "actionCompressZip": "Compress to ZIP",
+  "@actionCompressZip": {},
+  "actionCompressTar": "Compress to TAR",
+  "@actionCompressTar": {},
+  "actionCompressTarGz": "Compress to TAR.GZ",
+  "@actionCompressTarGz": {},
+  "actionExtract": "Extract Here",
+  "@actionExtract": {},
+  "actionExtractTo": "Extract to…",
+  "@actionExtractTo": {},
+  "actionClose": "Close",
+  "@actionClose": {},
+  "actionCancel": "Cancel",
+  "@actionCancel": {},
+  "actionRetry": "Retry",
+  "@actionRetry": {},
+  "actionSave": "Save",
+  "@actionSave": {},
+  "actionConnect": "Connect",
+  "@actionConnect": {},
+  "actionDisconnect": "Disconnect",
+  "@actionDisconnect": {},
+  "actionAdd": "Add",
+  "@actionAdd": {},
+  "actionEdit": "Edit",
+  "@actionEdit": {},
+  "actionRemove": "Remove",
+  "@actionRemove": {},
+
+  "sortByName": "Name",
+  "@sortByName": {},
+  "sortByDate": "Date Modified",
+  "@sortByDate": {},
+  "sortBySize": "Size",
+  "@sortBySize": {},
+  "sortByType": "Type",
+  "@sortByType": {},
+  "sortAscending": "Ascending",
+  "@sortAscending": {},
+  "sortDescending": "Descending",
+  "@sortDescending": {},
+
+  "panelLeft": "Left Panel",
+  "@panelLeft": {},
+  "panelRight": "Right Panel",
+  "@panelRight": {},
+  "panelActive": "Active Panel",
+  "@panelActive": {},
+
+  "operationCopying": "Copying {count} items…",
+  "@operationCopying": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "operationMoving": "Moving {count} items…",
+  "@operationMoving": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "operationDeleting": "Deleting {count} items…",
+  "@operationDeleting": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "operationComplete": "Operation complete",
+  "@operationComplete": {},
+  "operationFailed": "Operation failed: {error}",
+  "@operationFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "operationProgress": "{current} / {total}",
+  "@operationProgress": {
+    "placeholders": {
+      "current": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+
+  "connectionTypeSftp": "SFTP",
+  "@connectionTypeSftp": {},
+  "connectionTypeFtp": "FTP",
+  "@connectionTypeFtp": {},
+  "connectionTypeWebdav": "WebDAV",
+  "@connectionTypeWebdav": {},
+  "connectionTypeSmb": "SMB",
+  "@connectionTypeSmb": {},
+  "connectionTypeGdrive": "Google Drive",
+  "@connectionTypeGdrive": {},
+  "connectionTypeDropbox": "Dropbox",
+  "@connectionTypeDropbox": {},
+
+  "connectionHost": "Host",
+  "@connectionHost": {},
+  "connectionPort": "Port",
+  "@connectionPort": {},
+  "connectionUsername": "Username",
+  "@connectionUsername": {},
+  "connectionPassword": "Password",
+  "@connectionPassword": {},
+  "connectionName": "Connection Name",
+  "@connectionName": {},
+  "connectionAuthMethod": "Authentication Method",
+  "@connectionAuthMethod": {},
+  "connectionAuthPassword": "Password",
+  "@connectionAuthPassword": {},
+  "connectionAuthKey": "Private Key",
+  "@connectionAuthKey": {},
+  "connectionAddNew": "Add New Connection",
+  "@connectionAddNew": {},
+  "connectionEdit": "Edit Connection",
+  "@connectionEdit": {},
+  "connectionTest": "Test Connection",
+  "@connectionTest": {},
+  "connectionTestSuccess": "Connection successful",
+  "@connectionTestSuccess": {},
+  "connectionTestFailed": "Connection failed: {error}",
+  "@connectionTestFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "connectionDisconnected": "Disconnected",
+  "@connectionDisconnected": {},
+  "connectionReconnecting": "Reconnecting…",
+  "@connectionReconnecting": {},
+
+  "serverStart": "Start Server",
+  "@serverStart": {},
+  "serverStop": "Stop Server",
+  "@serverStop": {},
+  "serverRunning": "Server is running",
+  "@serverRunning": {},
+  "serverStopped": "Server is stopped",
+  "@serverStopped": {},
+  "serverSharedFolder": "Shared Folder",
+  "@serverSharedFolder": {},
+  "serverPort": "Port",
+  "@serverPort": {},
+  "serverUsername": "Username",
+  "@serverUsername": {},
+  "serverPassword": "Password",
+  "@serverPassword": {},
+  "serverActiveConnections": "Active Connections",
+  "@serverActiveConnections": {},
+  "serverNoConnections": "No active connections",
+  "@serverNoConnections": {},
+  "serverFtp": "FTP Server",
+  "@serverFtp": {},
+  "serverWebdav": "WebDAV Server",
+  "@serverWebdav": {},
+
+  "settingsLanguage": "Language",
+  "@settingsLanguage": {},
+  "settingsTheme": "Theme",
+  "@settingsTheme": {},
+  "settingsThemeLight": "Light",
+  "@settingsThemeLight": {},
+  "settingsThemeDark": "Dark",
+  "@settingsThemeDark": {},
+  "settingsThemeSystem": "System",
+  "@settingsThemeSystem": {},
+
+  "errorAccessDenied": "Access denied",
+  "@errorAccessDenied": {},
+  "errorNotFound": "Not found: {path}",
+  "@errorNotFound": {
+    "placeholders": {
+      "path": { "type": "String" }
+    }
+  },
+  "errorAlreadyExists": "Already exists: {path}",
+  "@errorAlreadyExists": {
+    "placeholders": {
+      "path": { "type": "String" }
+    }
+  },
+  "errorNetwork": "Network error: {error}",
+  "@errorNetwork": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "errorTimeout": "Operation timed out",
+  "@errorTimeout": {},
+  "errorUnknown": "An unknown error occurred",
+  "@errorUnknown": {},
+
+  "confirmDeleteTitle": "Delete",
+  "@confirmDeleteTitle": {},
+  "confirmDeleteMessage": "Are you sure you want to delete {count} item(s)?",
+  "@confirmDeleteMessage": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "confirmOverwriteTitle": "Overwrite",
+  "@confirmOverwriteTitle": {},
+  "confirmOverwriteMessage": "{name} already exists. Overwrite?",
+  "@confirmOverwriteMessage": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+
+  "propertiesName": "Name",
+  "@propertiesName": {},
+  "propertiesPath": "Path",
+  "@propertiesPath": {},
+  "propertiesSize": "Size",
+  "@propertiesSize": {},
+  "propertiesType": "Type",
+  "@propertiesType": {},
+  "propertiesModified": "Date Modified",
+  "@propertiesModified": {},
+  "propertiesPermissions": "Permissions",
+  "@propertiesPermissions": {},
+  "propertiesFolder": "Folder",
+  "@propertiesFolder": {},
+  "propertiesFile": "File",
+  "@propertiesFile": {},
+
+  "itemsSelected": "{count} selected",
+  "@itemsSelected": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "itemsCount": "{count} items",
+  "@itemsCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "emptyFolder": "This folder is empty",
+  "@emptyFolder": {}
+}

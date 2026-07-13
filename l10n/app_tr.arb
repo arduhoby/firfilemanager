@@ -1,0 +1,195 @@
+{
+  "@@locale": "tr",
+  "appTitle": "Fir Dosya Yöneticisi",
+
+  "navLocal": "Yerel",
+  "navConnections": "Bağlantılar",
+  "navServer": "Sunucu",
+  "navSettings": "Ayarlar",
+
+  "categoryImages": "Görüntüler",
+  "categoryDocuments": "Belgeler",
+  "categoryAudio": "Ses",
+  "categoryVideo": "Video",
+  "categoryDownloads": "İndirilenler",
+  "categoryMainStorage": "Ana Bellek",
+
+  "actionCopy": "Kopyala",
+  "actionMove": "Taşı",
+  "actionDelete": "Sil",
+  "actionRename": "Yeniden Adlandır",
+  "actionNewFolder": "Yeni Klasör",
+  "actionPaste": "Yapıştır",
+  "actionSelectAll": "Tümünü Seç",
+  "actionRefresh": "Yenile",
+  "actionOpen": "Aç",
+  "actionProperties": "Özellikler",
+  "actionOpenWith": "Aç",
+  "actionRevealInFinder": "Finder'da Göster",
+  "actionCompress": "Sıkıştır",
+  "actionCompressZip": "ZIP olarak sıkıştır",
+  "actionCompressTar": "TAR olarak sıkıştır",
+  "actionCompressTarGz": "TAR.GZ olarak sıkıştır",
+  "actionExtract": "Buraya Çıkar",
+  "actionExtractTo": "Çıkar…",
+  "actionClose": "Kapat",
+  "actionCancel": "İptal",
+  "actionRetry": "Tekrar Dene",
+  "actionSave": "Kaydet",
+  "actionConnect": "Bağlan",
+  "actionDisconnect": "Bağlantıyı Kes",
+  "actionAdd": "Ekle",
+  "actionEdit": "Düzenle",
+  "actionRemove": "Kaldır",
+
+  "sortByName": "İsim",
+  "sortByDate": "Değiştirilme Tarihi",
+  "sortBySize": "Boyut",
+  "sortByType": "Tür",
+  "sortAscending": "Artan",
+  "sortDescending": "Azalan",
+
+  "panelLeft": "Sol Panel",
+  "panelRight": "Sağ Panel",
+  "panelActive": "Aktif Panel",
+
+  "operationCopying": "{count} öğe kopyalanıyor…",
+  "@operationCopying": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "operationMoving": "{count} öğe taşınıyor…",
+  "@operationMoving": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "operationDeleting": "{count} öğe siliniyor…",
+  "@operationDeleting": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "operationComplete": "İşlem tamamlandı",
+  "operationFailed": "İşlem başarısız: {error}",
+  "@operationFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "operationProgress": "{current} / {total}",
+  "@operationProgress": {
+    "placeholders": {
+      "current": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+
+  "connectionTypeSftp": "SFTP",
+  "connectionTypeFtp": "FTP",
+  "connectionTypeWebdav": "WebDAV",
+  "connectionTypeSmb": "SMB",
+  "connectionTypeGdrive": "Google Drive",
+  "connectionTypeDropbox": "Dropbox",
+
+  "connectionHost": "Sunucu",
+  "connectionPort": "Port",
+  "connectionUsername": "Kullanıcı Adı",
+  "connectionPassword": "Şifre",
+  "connectionName": "Bağlantı Adı",
+  "connectionAuthMethod": "Kimlik Doğrulama Yöntemi",
+  "connectionAuthPassword": "Şifre",
+  "connectionAuthKey": "Özel Anahtar",
+  "connectionAddNew": "Yeni Bağlantı Ekle",
+  "connectionEdit": "Bağlantıyı Düzenle",
+  "connectionTest": "Bağlantıyı Test Et",
+  "connectionTestSuccess": "Bağlantı başarılı",
+  "connectionTestFailed": "Bağlantı başarısız: {error}",
+  "@connectionTestFailed": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "connectionDisconnected": "Bağlantı kesildi",
+  "connectionReconnecting": "Yeniden bağlanılıyor…",
+
+  "serverStart": "Sunucuyu Başlat",
+  "serverStop": "Sunucuyu Durdur",
+  "serverRunning": "Sunucu çalışıyor",
+  "serverStopped": "Sunucu durduruldu",
+  "serverSharedFolder": "Paylaşılan Klasör",
+  "serverPort": "Port",
+  "serverUsername": "Kullanıcı Adı",
+  "serverPassword": "Şifre",
+  "serverActiveConnections": "Aktif Bağlantılar",
+  "serverNoConnections": "Aktif bağlantı yok",
+  "serverFtp": "FTP Sunucusu",
+  "serverWebdav": "WebDAV Sunucusu",
+
+  "settingsLanguage": "Dil",
+  "settingsTheme": "Tema",
+  "settingsThemeLight": "Açık",
+  "settingsThemeDark": "Koyu",
+  "settingsThemeSystem": "Sistem",
+
+  "errorAccessDenied": "Erişim reddedildi",
+  "errorNotFound": "Bulunamadı: {path}",
+  "@errorNotFound": {
+    "placeholders": {
+      "path": { "type": "String" }
+    }
+  },
+  "errorAlreadyExists": "Zaten mevcut: {path}",
+  "@errorAlreadyExists": {
+    "placeholders": {
+      "path": { "type": "String" }
+    }
+  },
+  "errorNetwork": "Ağ hatası: {error}",
+  "@errorNetwork": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "errorTimeout": "İşlem zaman aşımına uğradı",
+  "errorUnknown": "Bilinmeyen bir hata oluştu",
+
+  "confirmDeleteTitle": "Sil",
+  "confirmDeleteMessage": "{count} öğeyi silmek istediğinize emin misiniz?",
+  "@confirmDeleteMessage": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "confirmOverwriteTitle": "Üzerine Yaz",
+  "confirmOverwriteMessage": "{name} zaten mevcut. Üzerine yazılsın mı?",
+  "@confirmOverwriteMessage": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+
+  "propertiesName": "İsim",
+  "propertiesPath": "Yol",
+  "propertiesSize": "Boyut",
+  "propertiesType": "Tür",
+  "propertiesModified": "Değiştirilme Tarihi",
+  "propertiesPermissions": "İzinler",
+  "propertiesFolder": "Klasör",
+  "propertiesFile": "Dosya",
+
+  "itemsSelected": "{count} seçili",
+  "@itemsSelected": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "itemsCount": "{count} öğe",
+  "@itemsCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "emptyFolder": "Bu klasör boş"
+}
