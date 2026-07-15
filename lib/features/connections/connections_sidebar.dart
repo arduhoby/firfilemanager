@@ -13,7 +13,7 @@ import '../../core/storage/storage_provider.dart';
 import '../../core/storage/storage_provider_service.dart';
 import '../file_operations/file_operations_state.dart';
 import '../shell_adaptive/panel_controller.dart';
-import '../settings/api_keys_dialog.dart';
+
 import 'connection_dialog.dart';
 import 'connection_repository.dart';
 import 'network_scanner.dart';
@@ -59,6 +59,7 @@ class _ConnectionsSidebarState extends ConsumerState<ConnectionsSidebar>
     with SingleTickerProviderStateMixin {
   final _connectingIds = <String>{};
   bool _isScanning = false;
+  bool _discoveredExpanded = true;
   late AnimationController _animController;
   late Animation<double> _widthAnim;
 
@@ -330,28 +331,43 @@ class _ConnectionsSidebarState extends ConsumerState<ConnectionsSidebar>
         // Discovered
         if (discoveredServices.isNotEmpty && !collapsed) ...[
           SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 10, 14, 2),
-              child: Text(
-                'DISCOVERED',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.8,
-                  fontSize: 10,
+            child: InkWell(
+              onTap: () => setState(() => _discoveredExpanded = !_discoveredExpanded),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 2),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'DISCOVERED',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.8,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ),
+                    Icon(
+                      _discoveredExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                      size: 14,
+                      color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
-          SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (ctx, i) => _DiscoveredTile(
-                service: discoveredServices[i],
-                onTap: () => _addDiscoveredAsConnection(context, discoveredServices[i]),
+          if (_discoveredExpanded)
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (ctx, i) => _DiscoveredTile(
+                  service: discoveredServices[i],
+                  onTap: () => _addDiscoveredAsConnection(context, discoveredServices[i]),
+                ),
+                childCount: discoveredServices.length,
               ),
-              childCount: discoveredServices.length,
             ),
-          ),
         ],
         if (_isScanning)
           const SliverToBoxAdapter(
@@ -384,17 +400,7 @@ class _ConnectionsSidebarState extends ConsumerState<ConnectionsSidebar>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _SidebarTile(
-            icon: Icons.key_outlined,
-            name: 'Cloud API Keys',
-            subtitle: 'OAuth credentials',
-            color: theme.colorScheme.onSurfaceVariant,
-            collapsed: collapsed,
-            onTap: () => showDialog(
-              context: context,
-              builder: (_) => const ApiKeysDialog(),
-            ),
-          ),
+
           _SidebarTile(
             icon: Icons.settings_outlined,
             name: 'Settings',
@@ -510,6 +516,8 @@ class _ConnectionsSidebarState extends ConsumerState<ConnectionsSidebar>
       'FTP' => ConnectionType.ftp,
       'SFTP' => ConnectionType.sftp,
       'WebDAV' => ConnectionType.webdav,
+      'SMB' => ConnectionType.smb,
+      '_smb._tcp' => ConnectionType.smb,
       _ => ConnectionType.ftp,
     };
     final profile = ConnectionProfile(
@@ -707,7 +715,7 @@ class _SidebarTileState extends State<_SidebarTile> {
                     ],
                   ),
                 ),
-                if ((widget.onEdit != null || widget.onDelete != null) && _hovered)
+                if (widget.onEdit != null || widget.onDelete != null)
                   _TileMenu(onEdit: widget.onEdit, onDelete: widget.onDelete),
               ],
             ),

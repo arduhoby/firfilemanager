@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import 'double_back_exit_wrapper.dart';
 import 'dual_pane_shell.dart';
 import 'layout_resolver.dart';
+import 'mobile_shell.dart';
 
 /// The adaptive shell that switches between dual-pane and category layouts
 /// based on screen size and orientation.
@@ -21,11 +23,13 @@ class ShellAdaptive extends StatelessWidget {
   Widget build(BuildContext context) {
     final layout = LayoutResolver.resolve(context);
 
-    return switch (layout) {
-      ShellLayout.dualPane => DualPaneShell(child: child),
-      ShellLayout.category => _buildPlaceholder(context, 'Category Shell — Sprint 2'),
-      ShellLayout.singleWithToggle => _buildPlaceholder(context, 'Single Panel — Sprint 2'),
-    };
+    return DoubleBackExitWrapper(
+      child: switch (layout) {
+        ShellLayout.dualPane => DualPaneShell(child: child),
+        ShellLayout.category => MobileShell(),
+        ShellLayout.singleWithToggle => MobileShell(),
+      },
+    );
   }
 
   Widget _buildPlaceholder(BuildContext context, String label) {

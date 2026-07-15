@@ -88,7 +88,6 @@ class SftpProvider implements StorageProvider {
   @override
   Future<void> disconnect() async {
     _isConnected = false;
-    _connectionController.add(false);
     try {
       _sftp?.close();
       _client?.close();
@@ -97,6 +96,11 @@ class SftpProvider implements StorageProvider {
     }
     _sftp = null;
     _client = null;
+    
+    if (!_connectionController.isClosed) {
+      _connectionController.add(false);
+      await _connectionController.close();
+    }
   }
 
   @override

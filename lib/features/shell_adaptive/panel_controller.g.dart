@@ -6,7 +6,7 @@ part of 'panel_controller.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$panelControllerHash() => r'f23fc5164372904c47b46aa8890a7805d3b29f30';
+String _$panelControllerHash() => r'ef5ca7013d4134d3f514c9de7a804ef9414f8df9';
 
 /// Controller that loads directory listings for panels.
 ///

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:mime/mime.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 // ignore: depend_on_referenced_packages
@@ -481,12 +482,35 @@ class LocalProvider implements StorageProvider {
         File(path).deleteSync();
       }
     } catch (e) {
-      throw StorageException(
-        'Delete failed: $e',
-        code: StorageException.accessDenied,
-        path: path,
-        cause: e,
-      );
+      debugPrint('Standard deleteSync failed for $path: $e');
+      debugPrint('Attempting fallback with rm -rf...');
+      
+      // GÜVENLİK: Koştan önce path'in makul olduğunu doğrula.
+      // Kök dizin, ev dizini veya /Volumes gibi kritik dizinler silinemez.
+      final normalizedPath = p.normalize(path);
+      if (normalizedPath == '/' ||
+          normalizedPath == p.normalize(Platform.environment['HOME'] ?? '/') ||
+          normalizedPath == '/Volumes') {
+        throw StorageException(
+          'Güvenlik: Bu dizin silinemez: $path',
+          code: StorageException.accessDenied,
+          path: path,
+        );
+      }
+      
+      try {
+        final result = await Process.run('rm', ['-rf', path]);
+        if (result.exitCode != 0) {
+          throw Exception('rm -rf başarısız oldu (Exit code: ${result.exitCode}): ${result.stderr}');
+        }
+      } catch (fallbackError) {
+        throw StorageException(
+          'Silme Başarısız: $e\nFallback Hatası: $fallbackError',
+          code: StorageException.accessDenied,
+          path: path,
+          cause: fallbackError,
+        );
+      }
     }
   }
 
@@ -523,6 +547,9 @@ class LocalProvider implements StorageProvider {
     if (homePathOverride != null) return homePathOverride!;
 
     try {
+      if (Platform.isAndroid) {
+        return '/storage/emulated/0';
+      }
       final home = await getApplicationDocumentsDirectory();
       return home.path;
     } catch (_) {
@@ -660,8 +687,8 @@ class LocalProvider implements StorageProvider {
       }
     } catch (e) {
       throw StorageException(
-        'Search failed: $e',
-        code: StorageException.networkError,
+        'Arama hatası: $e',
+        code: StorageException.accessDenied, // Yerel dosya işlemi — networkError değil
         path: path,
         cause: e,
       );

@@ -166,6 +166,21 @@ class PanelController extends _$PanelController {
     }
   }
 
+  /// Navigate to home path of current provider
+  Future<void> navigateHome(PanelSide side) async {
+    final panelState = side == PanelSide.a
+        ? ref.read(panelAProvider)
+        : ref.read(panelBProvider);
+
+    try {
+      final provider = _getProviderForPath(side, panelState.activeTab.currentPath);
+      final home = await provider.homePath;
+      await navigate(side, home);
+    } catch (e) {
+      // Ignore if provider doesn't exist
+    }
+  }
+
   /// Navigate forward in history
   Future<void> navigateForward(PanelSide side) async {
     if (side == PanelSide.a) {

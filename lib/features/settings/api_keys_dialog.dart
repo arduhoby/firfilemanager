@@ -38,14 +38,6 @@ class _ApiKeysDialogState extends ConsumerState<ApiKeysDialog> {
       'description': 'Dropbox Developer App Console\'dan oluşturduğunuz uygulama bilgileri.',
       'secretRequired': true,
     },
-    {
-      'key': 'nextcloud',
-      'name': 'Nextcloud',
-      'icon': Icons.storage_outlined,
-      'color': Colors.cyan,
-      'description': 'Nextcloud sunucunuzda tanımladığınız OAuth2 istemci bilgileri.',
-      'secretRequired': true,
-    },
   ];
 
   @override

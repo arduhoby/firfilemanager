@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -173,9 +174,12 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
             },
           ),
           PasteClipboardIntent: CallbackAction<PasteClipboardIntent>(
-            onInvoke: (intent) => ref
-                .read(fileOperationsActionsProvider)
-                .paste(context, activeSide),
+            onInvoke: (_) {
+              ref
+                  .read(fileOperationsActionsProvider.notifier)
+                  .paste(context, activeSide);
+              return null;
+            },
           ),
           RefreshIntent: CallbackAction<RefreshIntent>(
             onInvoke: (_) {
@@ -195,34 +199,78 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
           ),
         },
         child: Scaffold(
-          body: Column(
+          backgroundColor: Colors.transparent,
+          body: Stack(
             children: [
-              _buildTopBar(context, l10n, activeSide),
-              Expanded(
-                child: Row(
-                  children: [
-                    const ConnectionsSidebar(),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.all(4),
-                        child:
-                            (GoRouterState.of(context).uri.path == '/' ||
-                                GoRouterState.of(
-                                  context,
-                                ).uri.path.startsWith('/connections'))
-                            ? _ResizablePanels()
-                            : widget.child,
-                      ),
+              // ── Wallpaper background ──────────────────────────────────────
+              _buildWallpaper(context),
+              // ── Main content ─────────────────────────────────────────────
+              Column(
+                children: [
+                  _buildTopBar(context, l10n, activeSide),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        const ConnectionsSidebar(),
+                        Expanded(
+                          child: Column(
+                            children: [
+                              Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.fromLTRB(4, 4, 4, 1),
+                                  child:
+                                      (GoRouterState.of(context).uri.path == '/' ||
+                                          GoRouterState.of(
+                                            context,
+                                          ).uri.path.startsWith('/connections'))
+                                      ? _ResizablePanels()
+                                      : widget.child,
+                                ),
+                              ),
+                              _buildFunctionBar(context, l10n, activeSide, clipboard),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                  if (progress != null) _buildProgressBar(context, progress),
+                ],
               ),
-              _buildFunctionBar(context, l10n, activeSide, clipboard),
-              if (progress != null) _buildProgressBar(context, progress),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  /// Builds the wallpaper background — a full-screen image with a frosted-glass overlay.
+  Widget _buildWallpaper(BuildContext context) {
+    final settings = ref.watch(settingsProvider);
+    final bgPath = settings.backgroundImagePath;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    if (bgPath == null) {
+      // No wallpaper – use the normal Scaffold background colour
+      return Container(color: Theme.of(context).scaffoldBackgroundColor);
+    }
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Full-screen wallpaper image
+        Image.file(
+          File(bgPath),
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) =>
+              Container(color: Theme.of(context).scaffoldBackgroundColor),
+        ),
+        // Semi-transparent overlay so UI text stays readable
+        Container(
+          color: (isDark ? Colors.black : Colors.white)
+              .withValues(alpha: settings.backgroundOpacity),
+        ),
+      ],
     );
   }
 
@@ -492,65 +540,95 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
       Color? color,
     }) {
       final active = onPressed != null;
+
       return Tooltip(
         message: label,
-        child: TextButton.icon(
-          onPressed: onPressed,
-          icon: Icon(
-            icon,
-            size: 14,
-            color:
-                color ??
-                (active
-                    ? theme.colorScheme.onSurface
-                    : theme.colorScheme.onSurfaceVariant.withValues(
-                        alpha: 0.4,
-                      )),
-          ),
-          label: Text(
-            label,
-            style: theme.textTheme.labelSmall?.copyWith(
-              fontSize: 11,
-              color:
-                  color ??
-                  (active
-                      ? theme.colorScheme.onSurface
-                      : theme.colorScheme.onSurfaceVariant.withValues(
-                          alpha: 0.4,
-                        )),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: onPressed,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: active
+                    ? BoxDecoration(
+                        color: color?.withValues(alpha: 0.15) ?? theme.colorScheme.primary.withValues(alpha: 0.12),
+                        border: Border(
+                          top: BorderSide(color: Colors.white.withValues(alpha: 0.25), width: 0.8),
+                          left: BorderSide(color: Colors.white.withValues(alpha: 0.25), width: 0.8),
+                          bottom: BorderSide(
+                            color: color ?? theme.colorScheme.primary,
+                            width: 2.5,
+                          ),
+                          right: BorderSide(
+                            color: color ?? theme.colorScheme.primary,
+                            width: 1.2,
+                          ),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.15),
+                            blurRadius: 1,
+                            offset: const Offset(0, 1),
+                          )
+                        ],
+                      )
+                    : const BoxDecoration(
+                        color: Colors.transparent,
+                      ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      icon,
+                      size: 13,
+                      color: active
+                          ? (color ?? theme.colorScheme.primary)
+                          : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      label,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        fontSize: 10.5,
+                        fontWeight: active ? FontWeight.bold : FontWeight.normal,
+                        color: active
+                            ? (theme.brightness == Brightness.dark ? Colors.white : Colors.black)
+                            : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
-          style: TextButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(6),
-            ),
-            minimumSize: Size.zero,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
         ),
       );
     }
 
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: theme.brightness == Brightness.dark
-                ? const Color(0xBB1C1C1E)
-                : const Color(0xBBF5F5F7),
-            border: Border(
-              top: BorderSide(
+    return Container(
+      margin: const EdgeInsets.fromLTRB(4.0, 1.0, 4.0, 14.0), // 1px space from panel, 5mm from bottom edge, aligned with panels on left/right
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: theme.brightness == Brightness.dark
+                  ? const Color(0x991C1C1E)
+                  : const Color(0x99F5F5F7),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
                 color: theme.brightness == Brightness.dark
                     ? const Color(0x22FFFFFF)
                     : const Color(0x18000000),
                 width: 0.5,
               ),
             ),
-          ),
-          child: SingleChildScrollView(
+            child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
@@ -629,7 +707,7 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
                 actionButton(
                   icon: Icons.content_paste,
                   label: l10n.actionPaste,
-                  onPressed: clipboard.items.isEmpty
+                  onPressed: clipboard == null || clipboard.sourcePaths.isEmpty
                       ? null
                       : () => actions.paste(context, activeSide),
                 ),
@@ -676,8 +754,9 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildProgressBar(BuildContext context, TransferProgress progress) {
     if (progress.isFinished) {

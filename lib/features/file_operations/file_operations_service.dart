@@ -19,7 +19,7 @@ part 'file_operations_service.g.dart';
 /// Operations can be cancelled via [CancelToken].
 @Riverpod(keepAlive: true)
 class FileOperationsService extends _$FileOperationsService {
-  CancelToken? _activeCancelToken;
+  final Set<CancelToken> _activeTokens = {};
 
   @override
   void build() {
@@ -35,11 +35,12 @@ class FileOperationsService extends _$FileOperationsService {
   }) async {
     if (entries.isEmpty) return;
 
-    _activeCancelToken = CancelToken();
+    final cancelToken = CancelToken();
+    _activeTokens.add(cancelToken);
     final progress = ref.read(operationProgressProvider.notifier);
 
     for (var i = 0; i < entries.length; i++) {
-      if (_activeCancelToken!.isCancelled) break;
+      if (cancelToken.isCancelled) break;
 
       final entry = entries[i];
       final dirName = destProvider.normalizePath(destPath);
@@ -71,7 +72,7 @@ class FileOperationsService extends _$FileOperationsService {
         entry.path,
         destProvider,
         destEntryPath,
-        cancelToken: _activeCancelToken,
+        cancelToken: cancelToken,
       );
 
       await for (final p in stream) {
@@ -81,6 +82,13 @@ class FileOperationsService extends _$FileOperationsService {
         ));
       }
       } catch (e) {
+        // Rollback partial file/folder on failure
+        try {
+          if (await destProvider.exists(destEntryPath)) {
+            await destProvider.delete(destEntryPath);
+          }
+        } catch (_) {}
+
         progress.setProgress(TransferProgress(
           operation: TransferOperation.copy,
           state: TransferState.failed,
@@ -93,14 +101,14 @@ class FileOperationsService extends _$FileOperationsService {
 
     progress.setProgress(TransferProgress(
       operation: TransferOperation.copy,
-      state: _activeCancelToken!.isCancelled
+      state: cancelToken.isCancelled
           ? TransferState.cancelled
           : TransferState.completed,
       filesTransferred: entries.length,
       totalFiles: entries.length,
     ));
 
-    _activeCancelToken = null;
+    _activeTokens.remove(cancelToken);
   }
 
   /// Move entries within the same provider
@@ -134,6 +142,8 @@ class FileOperationsService extends _$FileOperationsService {
           error: e.toString(),
           currentFile: entry,
         ));
+        // delete() ve rename() gibi hatayı fırlat ki UI tarafı haberdar olsun
+        throw Exception('Taşıma hatası: $e');
       }
     }
 
@@ -152,7 +162,8 @@ class FileOperationsService extends _$FileOperationsService {
     required StorageProvider destProvider,
     required String destPath,
   }) async {
-    _activeCancelToken = CancelToken();
+    final cancelToken = CancelToken();
+    _activeTokens.add(cancelToken);
     final progress = ref.read(operationProgressProvider.notifier);
 
     progress.setProgress(TransferProgress(
@@ -171,12 +182,12 @@ class FileOperationsService extends _$FileOperationsService {
       final filesToSync = <FileEntry>[];
 
       Future<void> scanDirectory(String currentPath) async {
-        if (_activeCancelToken!.isCancelled) return;
+        if (cancelToken.isCancelled) return;
 
         try {
           final entries = await sourceProvider.list(currentPath, const ListOptions(showHidden: true));
           for (final entry in entries) {
-            if (_activeCancelToken!.isCancelled) return;
+            if (cancelToken.isCancelled) return;
 
             scannedCount++;
             if (scannedCount % 50 == 0) {
@@ -219,25 +230,36 @@ class FileOperationsService extends _$FileOperationsService {
             }
           }
         } catch (e) {
-          // Ignore permission issues for individual folders
+          // İzin hatalarını yutuyoruz ama ilerlemede belirtiyoruz
+          progress.setProgress(TransferProgress(
+            operation: TransferOperation.copy,
+            state: TransferState.inProgress,
+            currentFile: FileEntry(
+              name: 'Uyarı: Klasör okunamadı — ${e.toString().split('\n').first}',
+              path: currentPath,
+              isDirectory: true,
+              size: 0,
+            ),
+          ));
+          await Future.delayed(const Duration(milliseconds: 500));
         }
       }
 
       // 1. Scan recursively with progress updates
       await scanDirectory(sourcePath);
 
-      if (_activeCancelToken!.isCancelled) {
+      if (cancelToken.isCancelled) {
         progress.setProgress(TransferProgress(
           operation: TransferOperation.copy,
           state: TransferState.cancelled,
         ));
-        _activeCancelToken = null;
+        _activeTokens.remove(cancelToken);
         return;
       }
 
       // Now copy the filtered files
       for (var i = 0; i < filesToSync.length; i++) {
-        if (_activeCancelToken!.isCancelled) break;
+        if (cancelToken.isCancelled) break;
 
         final entry = filesToSync[i];
         final relativePath = sourceProvider.normalizePath(entry.path).replaceFirst(sourceProvider.normalizePath(sourcePath), '');
@@ -266,7 +288,7 @@ class FileOperationsService extends _$FileOperationsService {
             destProvider,
             destEntryPath,
             options: const CopyOptions(overwrite: true),
-            cancelToken: _activeCancelToken,
+            cancelToken: cancelToken,
           );
 
           await for (final p in stream) {
@@ -276,6 +298,13 @@ class FileOperationsService extends _$FileOperationsService {
             ));
           }
         } catch (e) {
+          // Rollback partial file/folder on failure
+          try {
+            if (await destProvider.exists(destEntryPath)) {
+              await destProvider.delete(destEntryPath);
+            }
+          } catch (_) {}
+          
           progress.setProgress(TransferProgress(
             operation: TransferOperation.copy,
             state: TransferState.failed,
@@ -287,7 +316,7 @@ class FileOperationsService extends _$FileOperationsService {
 
       progress.setProgress(TransferProgress(
         operation: TransferOperation.copy,
-        state: _activeCancelToken!.isCancelled
+        state: cancelToken.isCancelled
             ? TransferState.cancelled
             : TransferState.completed,
         filesTransferred: filesToSync.length,
@@ -301,7 +330,7 @@ class FileOperationsService extends _$FileOperationsService {
       ));
     }
 
-    _activeCancelToken = null;
+    _activeTokens.remove(cancelToken);
   }
 
   /// Delete entries
@@ -333,6 +362,8 @@ class FileOperationsService extends _$FileOperationsService {
           error: e.toString(),
           currentFile: entry,
         ));
+        // Hatayı yutma, fırlat ki UI tarafı SnackBar gösterebilsin
+        throw Exception('Silme hatası: $e');
       }
     }
 
@@ -386,9 +417,22 @@ class FileOperationsService extends _$FileOperationsService {
     await provider.mkdir(newPath);
   }
 
+  /// Create a new empty file
+  Future<void> createFile({
+    required StorageProvider provider,
+    required String parentPath,
+    required String name,
+  }) async {
+    final newPath = provider.joinPath(parentPath, name);
+    await provider.write(newPath, const Stream.empty()).last;
+  }
+
   /// Cancel the current operation
   void cancelOperation() {
-    _activeCancelToken?.cancel();
+    for (final token in _activeTokens) {
+      token.cancel();
+    }
+    _activeTokens.clear();
   }
 
   /// Paste from clipboard to the given destination
@@ -454,7 +498,8 @@ class FileOperationsService extends _$FileOperationsService {
     required StorageProvider destProvider,
     required String destPath,
   }) async {
-    _activeCancelToken = CancelToken();
+    final cancelToken = CancelToken();
+    _activeTokens.add(cancelToken);
     final progress = ref.read(operationProgressProvider.notifier);
 
     progress.setProgress(TransferProgress(
@@ -473,12 +518,12 @@ class FileOperationsService extends _$FileOperationsService {
       final syncItems = <SyncItem>[];
 
       Future<void> scanDirectory(String currentPath) async {
-        if (_activeCancelToken!.isCancelled) return;
+        if (cancelToken.isCancelled) return;
 
         try {
           final entries = await sourceProvider.list(currentPath, const ListOptions(showHidden: true));
           for (final entry in entries) {
-            if (_activeCancelToken!.isCancelled) return;
+            if (cancelToken.isCancelled) return;
 
             scannedCount++;
             if (scannedCount % 50 == 0) {
@@ -532,18 +577,29 @@ class FileOperationsService extends _$FileOperationsService {
             }
           }
         } catch (e) {
-          // Ignore
+          // İzin hatalarını yutuyoruz ama logluyoruz
+          progress.setProgress(TransferProgress(
+            operation: TransferOperation.copy,
+            state: TransferState.inProgress,
+            currentFile: FileEntry(
+              name: 'Uyarı: Klasör okunamadı — ${e.toString().split('\n').first}',
+              path: currentPath,
+              isDirectory: true,
+              size: 0,
+            ),
+          ));
+          await Future.delayed(const Duration(milliseconds: 500));
         }
       }
 
       await scanDirectory(sourcePath);
 
-      if (_activeCancelToken!.isCancelled) {
+      if (cancelToken.isCancelled) {
         progress.setProgress(TransferProgress(
           operation: TransferOperation.copy,
           state: TransferState.cancelled,
         ));
-        _activeCancelToken = null;
+        _activeTokens.remove(cancelToken);
         return [];
       }
 
@@ -564,7 +620,7 @@ class FileOperationsService extends _$FileOperationsService {
       ));
       rethrow;
     } finally {
-      _activeCancelToken = null;
+      _activeTokens.remove(cancelToken);
     }
   }
 
@@ -574,7 +630,8 @@ class FileOperationsService extends _$FileOperationsService {
     required String destPath,
     required List<SyncItem> selectedItems,
   }) async {
-    _activeCancelToken = CancelToken();
+    final cancelToken = CancelToken();
+    _activeTokens.add(cancelToken);
     final progress = ref.read(operationProgressProvider.notifier);
 
     progress.setProgress(TransferProgress(
@@ -584,7 +641,7 @@ class FileOperationsService extends _$FileOperationsService {
 
     try {
       for (var i = 0; i < selectedItems.length; i++) {
-        if (_activeCancelToken!.isCancelled) break;
+        if (cancelToken.isCancelled) break;
 
         final item = selectedItems[i];
         final destEntryPath = destProvider.joinPath(destPath, item.relativePath);
@@ -608,7 +665,7 @@ class FileOperationsService extends _$FileOperationsService {
             destProvider,
             destEntryPath,
             options: const CopyOptions(overwrite: true),
-            cancelToken: _activeCancelToken,
+            cancelToken: cancelToken,
           );
 
           await for (final p in stream) {
@@ -623,11 +680,24 @@ class FileOperationsService extends _$FileOperationsService {
             ));
           }
         } catch (e) {
-          // Continue copying other files
+          // Dosya kopyalama hatası — kullanıcıya bildir ama diğer dosyalara devam et
+          progress.setProgress(TransferProgress(
+            operation: TransferOperation.copy,
+            state: TransferState.inProgress,
+            currentFile: FileEntry(
+              name: 'Hata: ${item.relativePath} — ${e.toString().split('\n').first}',
+              path: item.relativePath,
+              isDirectory: false,
+              size: 0,
+            ),
+            filesTransferred: i,
+            totalFiles: selectedItems.length,
+          ));
+          await Future.delayed(const Duration(milliseconds: 1000));
         }
       }
 
-      if (_activeCancelToken!.isCancelled) {
+      if (cancelToken.isCancelled) {
         progress.setProgress(TransferProgress(
           operation: TransferOperation.copy,
           state: TransferState.cancelled,
@@ -645,7 +715,7 @@ class FileOperationsService extends _$FileOperationsService {
         error: e.toString(),
       ));
     } finally {
-      _activeCancelToken = null;
+      _activeTokens.remove(cancelToken);
     }
   }
 }

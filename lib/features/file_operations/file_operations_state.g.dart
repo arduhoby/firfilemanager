@@ -6,7 +6,7 @@ part of 'file_operations_state.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$panelAHash() => r'd9f65732bbffee915861f69e9535c5f69f11b041';
+String _$panelAHash() => r'0e5716876164d588cdecadb65c807ab27fcc1df0';
 
 /// State for panel A
 ///
@@ -23,7 +23,7 @@ final panelAProvider = NotifierProvider<PanelA, PanelState>.internal(
 );
 
 typedef _$PanelA = Notifier<PanelState>;
-String _$panelBHash() => r'728322a4201883589da100663d89605e1b1d39d4';
+String _$panelBHash() => r'7b1a55177f65c02ff454fa1f84ae4e8ee1103b51';
 
 /// State for panel B
 ///

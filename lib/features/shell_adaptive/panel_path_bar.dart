@@ -305,7 +305,7 @@ class _PanelPathBarState extends ConsumerState<PanelPathBar> {
                     children: [
                       InkWell(
                         onTap: () {
-                          ref.read(panelControllerProvider.notifier).navigate(widget.side, '/');
+                          ref.read(panelControllerProvider.notifier).navigateHome(widget.side);
                         },
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),

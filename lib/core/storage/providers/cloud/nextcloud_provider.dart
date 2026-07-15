@@ -1,13 +1,8 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
+import 'dart:io' as io;
 
-import 'package:http/http.dart' as http;
-import 'package:oauth2/oauth2.dart' as oauth2;
 import 'package:path/path.dart' as p;
-import 'package:url_launcher/url_launcher.dart';
-import 'package:dio/dio.dart' as dio;
-import 'package:xml/xml.dart';
+import 'package:webdav_client/webdav_client.dart';
 
 import '../../models/connection_profile.dart';
 import '../../models/file_entry.dart';
@@ -15,190 +10,253 @@ import '../../models/transfer_progress.dart';
 import '../../storage_provider.dart';
 
 class NextcloudProvider implements StorageProvider {
-  @override
-  final ConnectionProfile profile;
-  final String? clientId;
-  final String? clientSecret;
-  
-  oauth2.Client? _client;
-
   NextcloudProvider(
     this.profile, {
-    this.clientId,
-    this.clientSecret,
+    this.password,
   });
 
-  String get _baseUrl {
-    final host = profile.host ?? '';
-    final scheme = profile.effectivePort == 443 ? 'https' : 'http';
-    return '$scheme://$host';
-  }
+  @override
+  final ConnectionProfile profile;
+  
+  final String? password;
 
-  String get _webdavUrl => '$_baseUrl/remote.php/webdav';
+  Client? _client;
+  bool _isConnected = false;
+  final StreamController<bool> _connectionController = StreamController<bool>.broadcast();
+
+  @override
+  String get displayName => 'Nextcloud: ${profile.name}';
+
+  @override
+  bool get isConnected => _isConnected;
+
+  @override
+  Stream<bool> get connectionStateChanges => _connectionController.stream;
 
   @override
   Future<void> connect() async {
-    if (clientId == null || clientId!.isEmpty) {
-      throw Exception('Missing Client ID. Please configure API Keys in Settings.');
-    }
+    try {
+      final protocol = profile.effectivePort == 443 ? 'https' : 'http';
+      var host = profile.host ?? '';
+      if (host.startsWith('http://')) host = host.substring(7);
+      if (host.startsWith('https://')) host = host.substring(8);
+      // Strip trailing slash if present
+      final cleanHost = host.endsWith('/') ? host.substring(0, host.length - 1) : host;
+      
+      final baseUrl = '$protocol://$cleanHost:${profile.effectivePort}/remote.php/webdav';
 
-    final authorizationEndpoint = Uri.parse('$_baseUrl/index.php/apps/oauth2/authorize');
-    final tokenEndpoint = Uri.parse('$_baseUrl/index.php/apps/oauth2/api/v1/token');
-    
-    final grant = oauth2.AuthorizationCodeGrant(
-      clientId!,
-      authorizationEndpoint,
-      tokenEndpoint,
-      secret: clientSecret,
-    );
-    
-    final redirectUrl = Uri.parse('http://localhost:3000/callback');
-    final authUrl = grant.getAuthorizationUrl(redirectUrl);
-    
-    if (await canLaunchUrl(authUrl)) {
-      await launchUrl(authUrl);
-      // Wait for auth code...
-    } else {
-      throw Exception('Could not launch Nextcloud authorization URL.');
+      if (profile.authMethod == AuthMethod.password) {
+        if (password == null || password!.isEmpty) {
+          throw Exception('Password is required for Basic Auth');
+        }
+        _client = newClient(
+          baseUrl,
+          user: profile.username ?? '',
+          password: password ?? '',
+        );
+      } else {
+        throw Exception('Nextcloud OAuth is not fully implemented yet. Please use Basic Auth (username/password).');
+      }
+
+      // Test connection
+      await _client!.readDir('/');
+      _isConnected = true;
+      _connectionController.add(true);
+    } catch (e) {
+      _isConnected = false;
+      throw StorageException('Nextcloud connection failed: $e', cause: e);
     }
   }
 
   @override
   Future<void> disconnect() async {
-    _client?.close();
+    _isConnected = false;
     _client = null;
-  }
-
-  @override
-  bool get isConnected => _client != null;
-
-  String _buildWebdavPath(String path) {
-    if (path == '/' || path == '') return _webdavUrl;
-    return '$_webdavUrl${path.startsWith('/') ? path : '/$path'}';
+    if (!_connectionController.isClosed) {
+      _connectionController.add(false);
+      await _connectionController.close();
+    }
   }
 
   @override
   Future<List<FileEntry>> list(String path, [ListOptions? options]) async {
-    if (!isConnected) throw Exception('Not connected to Nextcloud');
-    
-    final url = _buildWebdavPath(path);
-    final response = await _client!.send(http.Request('PROPFIND', Uri.parse(url))
-      ..headers['Depth'] = '1'
-    );
-    
-    final body = await response.stream.bytesToString();
-    if (response.statusCode >= 400) {
-      throw Exception('Failed to list Nextcloud folder: $body');
-    }
-    
-    return _parsePropfind(body, rootPath: path);
-  }
+    if (!_isConnected || _client == null) throw StorageException('Not connected');
 
-  List<FileEntry> _parsePropfind(String xmlStr, {String? rootPath}) {
-    final document = XmlDocument.parse(xmlStr);
-    final responses = document.findAllElements('d:response');
-    final entries = <FileEntry>[];
-    
-    for (var r in responses) {
-      final href = r.findElements('d:href').firstOrNull?.innerText ?? '';
-      
-      // Skip the root folder itself if listing
-      if (rootPath != null && href.endsWith('/')) {
-        final decodedHref = Uri.decodeFull(href).replaceAll(r'\', '/');
-        final decodedRoot = rootPath.endsWith('/') ? rootPath : '$rootPath/';
-        if (decodedHref.endsWith(decodedRoot)) continue;
-      }
+    try {
+      final items = await _client!.readDir(path);
+      final showHidden = options?.showHidden ?? false;
 
-      final props = r.findAllElements('d:prop').firstOrNull;
-      if (props == null) continue;
-
-      final getlastmodified = props.findElements('d:getlastmodified').firstOrNull?.innerText;
-      final getcontentlength = props.findElements('d:getcontentlength').firstOrNull?.innerText;
-      final resourcetype = props.findElements('d:resourcetype').firstOrNull;
-      
-      final isDir = resourcetype?.findElements('d:collection').isNotEmpty ?? false;
-      final size = getcontentlength != null ? int.tryParse(getcontentlength) ?? 0 : 0;
-      final modified = getlastmodified != null ? HttpDate.parse(getlastmodified) : DateTime.now();
-
-      final decodedPath = Uri.decodeFull(href.replaceFirst('/remote.php/webdav', ''));
-      
-      entries.add(FileEntry(
-        name: p.basename(decodedPath),
-        path: decodedPath,
-        isDirectory: isDir,
-        size: isDir ? 0 : size,
-        modified: modified,
-        permissions: '',
-      ));
-    }
-    
-    return entries;
-  }
-
-  @override
-  Future<void> delete(String path) async {
-    if (!isConnected) throw Exception('Not connected to Nextcloud');
-    
-    final url = _buildWebdavPath(path);
-    final response = await _client!.delete(Uri.parse(url));
-    
-    if (response.statusCode >= 400) {
-      throw Exception('Failed to delete in Nextcloud: ${response.body}');
-    }
-  }
-
-  @override
-  Future<void> rename(String oldPath, String newName) async {
-    if (!isConnected) throw Exception('Not connected to Nextcloud');
-    
-    final srcUrl = _buildWebdavPath(oldPath);
-    final newPath = p.join(p.dirname(oldPath), newName).replaceAll(r'\', '/');
-    final destUrl = _buildWebdavPath(newPath);
-    
-    final request = http.Request('MOVE', Uri.parse(srcUrl));
-    request.headers['Destination'] = destUrl;
-    final response = await _client!.send(request);
-    
-    if (response.statusCode >= 400) {
-      throw Exception('Failed to rename in Nextcloud: ${response.reasonPhrase}');
-    }
-  }
-
-  @override
-  Future<void> makeDirectory(String path) async {
-    if (!isConnected) throw Exception('Not connected to Nextcloud');
-    
-    final url = _buildWebdavPath(path);
-    final request = http.Request('MKCOL', Uri.parse(url));
-    final response = await _client!.send(request);
-    
-    if (response.statusCode >= 400) {
-      throw Exception('Failed to create folder in Nextcloud: ${response.reasonPhrase}');
+      return items.where((item) {
+        final name = p.basename(item.path ?? '');
+        if (name == '.' || name == '..') return false;
+        if (!showHidden && name.startsWith('.')) return false;
+        return true;
+      }).map((item) {
+        final name = p.basename(item.path ?? '');
+        return FileEntry(
+          name: name,
+          path: item.path ?? '',
+          isDirectory: item.isDir ?? false,
+          size: item.size ?? 0,
+          modified: item.mTime,
+          hidden: name.startsWith('.'),
+        );
+      }).toList();
+    } catch (e) {
+      throw StorageException('Nextcloud list failed: $e', cause: e);
     }
   }
 
   @override
   Future<FileEntry> stat(String path) async {
-    if (!isConnected) throw Exception('Not connected to Nextcloud');
-    
-    final url = _buildWebdavPath(path);
-    final response = await _client!.send(http.Request('PROPFIND', Uri.parse(url))
-      ..headers['Depth'] = '0'
-    );
-    
-    final body = await response.stream.bytesToString();
-    if (response.statusCode >= 400) {
-      throw Exception('Failed to stat Nextcloud file: $body');
+    if (!_isConnected || _client == null) throw StorageException('Not connected');
+
+    try {
+      final parent = p.dirname(path);
+      final name = p.basename(path);
+      final entries = await list(parent);
+      final entry = entries.where((e) => e.name == name).firstOrNull;
+      if (entry == null) {
+        throw StorageException('Not found', code: StorageException.notFound);
+      }
+      return entry;
+    } catch (e) {
+      if (e is StorageException) rethrow;
+      throw StorageException('Nextcloud stat failed: $e', cause: e);
     }
-    
-    final entries = _parsePropfind(body);
-    if (entries.isEmpty) throw Exception('File not found in Nextcloud');
-    return entries.first;
+  }
+
+  @override
+  Stream<TransferProgress> read(String path, {CancelToken? cancelToken}) async* {
+    if (!_isConnected || _client == null) {
+      yield TransferProgress(operation: TransferOperation.read, state: TransferState.failed, error: 'Not connected');
+      return;
+    }
+
+    try {
+      final tempDir = await io.Directory.systemTemp.createTemp('nc_download_');
+      final tempFile = io.File('${tempDir.path}/${p.basename(path)}');
+
+      await _client!.read2File(path, tempFile.path);
+
+      final bytes = tempFile.readAsBytesSync();
+      yield TransferProgress(
+        operation: TransferOperation.read,
+        state: TransferState.completed,
+        bytesTransferred: bytes.length,
+        totalBytes: bytes.length,
+      );
+
+      tempFile.deleteSync();
+      tempDir.deleteSync();
+    } catch (e) {
+      yield TransferProgress(operation: TransferOperation.read, state: TransferState.failed, error: e.toString());
+    }
+  }
+
+  @override
+  Stream<TransferProgress> write(String path, Stream<List<int>> data, {CancelToken? cancelToken}) async* {
+    if (!_isConnected || _client == null) {
+      yield TransferProgress(operation: TransferOperation.write, state: TransferState.failed, error: 'Not connected');
+      return;
+    }
+
+    try {
+      final tempDir = await io.Directory.systemTemp.createTemp('nc_upload_');
+      final tempFile = io.File('${tempDir.path}/${p.basename(path)}');
+
+      final sink = tempFile.openWrite();
+      var bytesWritten = 0;
+
+      await for (final chunk in data) {
+        if (cancelToken?.isCancelled ?? false) {
+          await sink.close();
+          tempFile.deleteSync();
+          tempDir.deleteSync();
+          yield TransferProgress(operation: TransferOperation.write, state: TransferState.cancelled);
+          return;
+        }
+        sink.add(chunk);
+        bytesWritten += chunk.length;
+        yield TransferProgress(operation: TransferOperation.write, state: TransferState.inProgress, bytesTransferred: bytesWritten);
+      }
+
+      await sink.flush();
+      await sink.close();
+
+      await _client!.writeFromFile(tempFile.path, path);
+
+      tempFile.deleteSync();
+      tempDir.deleteSync();
+
+      yield TransferProgress(operation: TransferOperation.write, state: TransferState.completed, bytesTransferred: bytesWritten);
+    } catch (e) {
+      yield TransferProgress(operation: TransferOperation.write, state: TransferState.failed, error: e.toString());
+    }
+  }
+
+  @override
+  Stream<TransferProgress> copy(String sourcePath, StorageProvider destProvider, String destPath, {CopyOptions options = const CopyOptions(), CancelToken? cancelToken}) async* {
+    final controller = StreamController<List<int>>();
+    var bytesTransferred = 0;
+
+    try {
+      final tempDir = await io.Directory.systemTemp.createTemp('nc_copy_');
+      final tempFile = io.File('${tempDir.path}/${p.basename(sourcePath)}');
+
+      await _client!.read2File(sourcePath, tempFile.path);
+      final bytes = tempFile.readAsBytesSync();
+      bytesTransferred = bytes.length;
+
+      controller.add(bytes);
+      controller.close();
+
+      await for (final progress in destProvider.write(destPath, controller.stream, cancelToken: cancelToken)) {
+        yield progress.copyWith(operation: TransferOperation.copy, bytesTransferred: bytesTransferred);
+      }
+
+      tempFile.deleteSync();
+      tempDir.deleteSync();
+    } catch (e) {
+      yield TransferProgress(operation: TransferOperation.copy, state: TransferState.failed, error: e.toString());
+    }
+  }
+
+  @override
+  Future<void> move(String sourcePath, String destPath) async {
+    if (!_isConnected || _client == null) throw StorageException('Not connected');
+    try {
+      await _client!.rename(sourcePath, destPath, false);
+    } catch (e) {
+      throw StorageException('Nextcloud move failed: $e', cause: e);
+    }
+  }
+
+  @override
+  Future<void> rename(String path, String newName) async {
+    final parent = p.dirname(path);
+    final newPath = p.join(parent, newName);
+    await move(path, newPath);
+  }
+
+  @override
+  Future<void> delete(String path) async {
+    if (!_isConnected || _client == null) throw StorageException('Not connected');
+    try {
+      await _client!.remove(path);
+    } catch (e) {
+      throw StorageException('Nextcloud delete failed: $e', cause: e);
+    }
   }
 
   @override
   Future<void> mkdir(String path) async {
-    throw UnimplementedError();
+    if (!_isConnected || _client == null) throw StorageException('Not connected');
+    try {
+      await _client!.mkdir(path);
+    } catch (e) {
+      throw StorageException('Nextcloud mkdir failed: $e', cause: e);
+    }
   }
 
   @override
@@ -212,70 +270,62 @@ class NextcloudProvider implements StorageProvider {
   }
 
   @override
+  Future<String> get homePath async => profile.defaultPath;
+
+  @override
+  Future<int?> getFreeSpace(String path) async => null;
+
+  @override
+  String normalizePath(String path) => p.normalize(path);
+
+  @override
+  String joinPath(String parent, String child) => p.join(parent, child);
+
+  @override
   String basename(String path) => p.basename(path);
 
   @override
   String dirname(String path) => p.dirname(path);
 
   @override
-  Stream<TransferProgress> read(String path, {CancelToken? cancelToken}) async* {
-    if (!isConnected) throw Exception('Not connected to Nextcloud');
-    throw UnimplementedError();
-  }
-
-  @override
-  Stream<TransferProgress> write(String path, Stream<List<int>> data, {CancelToken? cancelToken}) async* {
-    if (!isConnected) throw Exception('Not connected to Nextcloud');
-    throw UnimplementedError();
-  }
-
-  @override
-  Stream<TransferProgress> copy(String sourcePath, StorageProvider destProvider, String destPath, {CopyOptions options = const CopyOptions(), CancelToken? cancelToken}) async* {
-    if (!isConnected) throw Exception('Not connected to Nextcloud');
-    throw UnimplementedError();
-  }
-
-  @override
   Future<List<FileEntry>> search(String path, String query, {bool recursive = false}) async {
-    if (!isConnected) throw Exception('Not connected to Nextcloud');
-    
-    // Nextcloud/WebDAV search uses specific WebDAV SEARCH extension or OCS API.
-    // For simplicity, we can fallback to recursive PROPFIND or OCS.
-    // We'll throw UnimplementedError for now as it's complex for WebDAV.
-    throw UnimplementedError('Search not implemented for Nextcloud yet.');
+    final results = <FileEntry>[];
+    final queryLower = query.toLowerCase();
+
+    Future<void> doSearch(String currentPath) async {
+      final entries = await list(currentPath);
+      for (final entry in entries) {
+        if (entry.name.toLowerCase().contains(queryLower)) {
+          results.add(entry);
+        }
+        if (recursive && entry.isDirectory) {
+          try {
+            await doSearch(entry.path);
+          } catch (_) {}
+        }
+      }
+    }
+
+    await doSearch(path);
+    return results;
   }
-
-  @override
-  String get displayName => profile.name;
-
-  @override
-  Stream<bool> get connectionStateChanges => const Stream.empty();
-
-  @override
-  Future<void> move(String sourcePath, String destPath) async {
-    throw UnimplementedError('Move is not implemented yet');
-  }
-
-  @override
-  Future<int?> getFreeSpace(String path) async => null;
-
-  @override
-  Future<String> get homePath async => '/';
-
-  @override
-  String normalizePath(String path) => path;
-
-  @override
-  String joinPath(String parent, String child) => '$parent/$child'.replaceAll('//', '/');
 
   @override
   bool supports(ProviderCapability capability) {
-    return [
-      ProviderCapability.list,
-      ProviderCapability.read,
-      ProviderCapability.write,
-      ProviderCapability.delete,
-      ProviderCapability.mkdir,
-    ].contains(capability);
+    switch (capability) {
+      case ProviderCapability.read:
+      case ProviderCapability.write:
+      case ProviderCapability.delete:
+      case ProviderCapability.move:
+      case ProviderCapability.mkdir:
+      case ProviderCapability.list:
+      case ProviderCapability.search:
+        return true;
+      case ProviderCapability.streaming:
+      case ProviderCapability.freeSpace:
+      case ProviderCapability.symlinks:
+      case ProviderCapability.permissions:
+        return false;
+    }
   }
 }

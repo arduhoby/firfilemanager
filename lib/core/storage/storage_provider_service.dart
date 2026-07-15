@@ -137,12 +137,9 @@ class StorageProviderRegistry extends _$StorageProviderRegistry {
           clientSecret: hasProfileKeys ? clientSecret : keys?.clientSecret,
         );
       case ConnectionType.nextcloud:
-        final hasProfileKeys = clientId != null && clientId.isNotEmpty;
-        final keys = hasProfileKeys ? null : ref.read(apiKeysRepositoryProvider.notifier).getKeys('nextcloud');
         return NextcloudProvider(
           profile,
-          clientId: hasProfileKeys ? clientId : keys?.clientId,
-          clientSecret: hasProfileKeys ? clientSecret : keys?.clientSecret,
+          password: password,
         );
     }
   }

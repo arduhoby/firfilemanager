@@ -7,8 +7,25 @@ import 'core/router/app_router.dart';
 import 'core/settings/settings_provider.dart';
 import 'core/theme/app_theme.dart';
 
-void main() {
+import 'dart:io';
+import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
+
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  if (Platform.isAndroid || Platform.isIOS) {
+    await Permission.storage.request();
+    if (Platform.isAndroid) {
+      await Permission.manageExternalStorage.request();
+    }
+    // Lock to landscape for mobile devices for now
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeRight,
+      DeviceOrientation.landscapeLeft,
+    ]);
+  }
+
   runApp(
     const ProviderScope(
       child: FirFileManagerApp(),

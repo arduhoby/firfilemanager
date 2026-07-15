@@ -65,11 +65,15 @@ class SmbProvider implements StorageProvider {
   @override
   Future<void> disconnect() async {
     _isConnected = false;
-    _connectionController.add(false);
     try {
       await _client?.close();
     } catch (_) {}
     _client = null;
+    
+    if (!_connectionController.isClosed) {
+      _connectionController.add(false);
+      await _connectionController.close();
+    }
   }
 
   @override

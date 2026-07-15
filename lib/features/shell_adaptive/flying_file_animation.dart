@@ -9,14 +9,17 @@ class FlyingFileAnimation {
     required Offset end,
     required IconData icon,
     required Color color,
+    bool playSound = true,
   }) {
-    final player = AudioPlayer();
-    if (icon == Icons.delete_outline || icon == Icons.delete) {
-      player.play(AssetSource('sounds/trash.wav'));
-    } else {
-      player.play(AssetSource('sounds/copy.wav'));
+    if (playSound) {
+      final player = AudioPlayer();
+      if (icon == Icons.delete_outline || icon == Icons.delete) {
+        player.play(AssetSource('sounds/trash.wav'));
+      } else {
+        player.play(AssetSource('sounds/copy.wav'));
+      }
+      player.onPlayerComplete.listen((_) => player.dispose());
     }
-    player.onPlayerComplete.listen((_) => player.dispose());
 
     final overlay = Overlay.of(context);
     late OverlayEntry entry;

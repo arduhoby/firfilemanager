@@ -27,7 +27,7 @@ final localStorageProviderProvider = Provider<StorageProvider>.internal(
 // ignore: unused_element
 typedef LocalStorageProviderRef = ProviderRef<StorageProvider>;
 String _$storageProviderRegistryHash() =>
-    r'faeef58fe89371a366c0587de383442b57271f9e';
+    r'f954243302a552c10736346fd79fa43faaf4098e';
 
 /// Manages [StorageProvider] instances — one per connection profile.
 ///

@@ -121,9 +121,19 @@ class NetworkScanner extends _$NetworkScanner {
       final interfaces = await NetworkInterface.list(
         type: InternetAddressType.IPv4,
       );
+
+      // Sort interfaces to prioritize 'wlan' and 'en' (WiFi/Ethernet) over 'rmnet' (cellular)
+      interfaces.sort((a, b) {
+        final aIsWifi = a.name.startsWith('wlan') || a.name.startsWith('en');
+        final bIsWifi = b.name.startsWith('wlan') || b.name.startsWith('en');
+        if (aIsWifi && !bIsWifi) return -1;
+        if (!aIsWifi && bIsWifi) return 1;
+        return 0;
+      });
+
       for (final interface in interfaces) {
         for (final addr in interface.addresses) {
-          // Skip loopback
+          // Skip loopback and prefer private network IPs (192.168.x.x, 10.x.x.x, 172.16.x.x)
           if (!addr.isLoopback) {
             return addr.address;
           }

@@ -44,9 +44,12 @@ class _PanelDriveBarState extends ConsumerState<PanelDriveBar> {
     final drives = <_DriveItem>[];
     
     // Default home directory
+    final localProvider = ref.read(localStorageProviderProvider);
+    final homePath = await localProvider.homePath;
+    
     drives.add(_DriveItem(
       id: 'local',
-      path: Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'] ?? '/',
+      path: homePath,
       name: 'Home',
       icon: Icons.home_filled,
       isLocal: true,
@@ -176,12 +179,12 @@ class _PanelDriveBarState extends ConsumerState<PanelDriveBar> {
     }
 
     return Container(
-      height: 52,
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      height: 38,
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
         border: Border(
-          bottom: BorderSide(color: theme.dividerColor.withValues(alpha: 0.5)),
+          bottom: BorderSide(color: theme.dividerColor.withValues(alpha: 0.4)),
         ),
       ),
       child: ListView.builder(
@@ -194,10 +197,10 @@ class _PanelDriveBarState extends ConsumerState<PanelDriveBar> {
              (item.isLocal ? currentPath.startsWith(item.path) : true);
           
           return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 1.5),
             child: Material(
-              color: isSelected ? theme.colorScheme.primaryContainer.withValues(alpha: 0.8) : Colors.transparent,
-              borderRadius: BorderRadius.circular(6),
+              color: isSelected ? theme.colorScheme.primaryContainer.withValues(alpha: 0.75) : Colors.transparent,
+              borderRadius: BorderRadius.circular(5),
               clipBehavior: Clip.antiAlias,
               child: InkWell(
                 onTap: () async {
@@ -226,20 +229,20 @@ class _PanelDriveBarState extends ConsumerState<PanelDriveBar> {
                   }
                 },
                 child: Container(
-                  width: 56,
-                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  width: 44, // reduced from 56 to take up less width
+                  padding: const EdgeInsets.symmetric(vertical: 1),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(
                         item.icon,
-                        size: 20,
+                        size: 15, // reduced from 20 for a slimmer profile
                         color: isSelected 
                            ? theme.colorScheme.onPrimaryContainer
                            : (item.color ?? theme.colorScheme.onSurfaceVariant),
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 1),
                       Text(
                         _formatName(item.name),
                         style: theme.textTheme.labelSmall?.copyWith(
@@ -247,7 +250,7 @@ class _PanelDriveBarState extends ConsumerState<PanelDriveBar> {
                              ? theme.colorScheme.onPrimaryContainer
                              : theme.colorScheme.onSurfaceVariant,
                           fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                          fontSize: 9,
+                          fontSize: 8.5,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,

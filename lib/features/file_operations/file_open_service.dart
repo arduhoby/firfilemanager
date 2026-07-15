@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'file_open_service.g.dart';
@@ -38,6 +39,57 @@ class FileOpenService extends _$FileOpenService {
     try {
       if (Platform.isMacOS) {
         await Process.run('open', ['-a', appName, path]);
+        return true;
+      }
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Ask the user to choose an application and open the file
+  Future<bool> chooseAppAndOpen(String path) async {
+    try {
+      String? appPath;
+      String? initialDirectory;
+      List<String>? allowedExtensions;
+
+      if (Platform.isMacOS) {
+        final result = await FilePicker.platform.getDirectoryPath(
+          dialogTitle: 'Şununla Aç... (Lütfen bir .app seçin)',
+          initialDirectory: '/Applications',
+        );
+        if (result != null) {
+          appPath = result;
+        }
+      } else if (Platform.isWindows) {
+        initialDirectory = 'C:\\Program Files';
+        allowedExtensions = ['exe', 'bat', 'cmd'];
+      } else if (Platform.isLinux) {
+        initialDirectory = '/usr/bin';
+      }
+
+      if (!Platform.isMacOS) {
+        final result = await FilePicker.platform.pickFiles(
+          dialogTitle: 'Şununla Aç...',
+          initialDirectory: initialDirectory,
+          type: allowedExtensions != null ? FileType.custom : FileType.any,
+          allowedExtensions: allowedExtensions,
+        );
+
+        if (result != null && result.files.isNotEmpty) {
+          appPath = result.files.single.path;
+        }
+      }
+
+      if (appPath != null && appPath.isNotEmpty) {
+        if (Platform.isMacOS) {
+          await Process.run('open', ['-a', appPath, path]);
+        } else if (Platform.isWindows) {
+          await Process.start(appPath, [path]);
+        } else if (Platform.isLinux) {
+          await Process.start(appPath, [path]);
+        }
         return true;
       }
       return false;

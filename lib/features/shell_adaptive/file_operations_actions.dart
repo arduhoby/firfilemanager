@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -15,6 +16,8 @@ import '../file_operations/sync_models.dart';
 import 'panel_controller.dart';
 import 'sync_preview_dialog.dart';
 import '../../core/storage/models/transfer_progress.dart';
+import '../../core/settings/settings_provider.dart';
+import '../file_operations/mac_app_picker_dialog.dart';
 import 'flying_file_animation.dart';
 
 part 'file_operations_actions.g.dart';
@@ -51,12 +54,15 @@ class FileOperationsActions extends _$FileOperationsActions {
         ? Colors.red
         : Theme.of(context).colorScheme.primary;
 
+    final playSound = ref.read(settingsProvider).playAnimationSounds;
+
     FlyingFileAnimation.show(
       context,
       start: start,
       end: end,
       icon: icon,
       color: color,
+      playSound: playSound,
     );
   }
 
@@ -106,17 +112,23 @@ class FileOperationsActions extends _$FileOperationsActions {
     final service = ref.read(fileOperationsServiceProvider.notifier);
 
     final clipboard = ref.read(fileClipboardProvider);
-    if (clipboard.items.isNotEmpty) {
-      final sourceSide = clipboard.sourceSide ?? (destSide == PanelSide.a ? PanelSide.b : PanelSide.a);
-      final operation = clipboard.isCut ? TransferOperation.move : TransferOperation.copy;
+    if (clipboard != null && clipboard.sourcePaths.isNotEmpty) {
+      final sourceSide = clipboard.sourceSide;
+      final operation = clipboard.operation == ClipboardOperation.cut ? TransferOperation.move : TransferOperation.copy;
       // We assume it might be a dir, but it's just for icon
       _triggerAnimation(context, sourceSide, operation, false);
     }
 
-    await service.paste(
-      destProvider: provider,
-      destPath: destState.activeTab.currentPath,
-    );
+    try {
+      await service.paste(
+        destProvider: provider,
+        destPath: destState.activeTab.currentPath,
+      );
+    } catch (e) {
+      if (context.mounted) {
+        _showErrorSnackBar(context, e.toString());
+      }
+    }
 
     // Refresh the destination panel
     await ref.read(panelControllerProvider.notifier).refresh(destSide);
@@ -181,48 +193,83 @@ class FileOperationsActions extends _$FileOperationsActions {
     PanelSide side,
     List<FileEntry> entries,
   ) async {
+    await _executeDeleteOrAsk(context, side, entries);
+  }
+
+  /// Unified delete execution: asks only if a directory is NOT empty.
+  Future<void> _executeDeleteOrAsk(
+    BuildContext context,
+    PanelSide side,
+    List<FileEntry> entries,
+  ) async {
+    if (entries.isEmpty) return;
     final l10n = gen.AppLocalizations.of(context)!;
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(l10n.confirmDeleteTitle),
-        content: Text(l10n.confirmDeleteMessage(entries.length)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(l10n.actionCancel),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-            ),
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(l10n.actionDelete),
-          ),
-        ],
-      ),
-    );
-
-    if (result != true) return;
-
     final provider = _getProviderForSide(side);
     final service = ref.read(fileOperationsServiceProvider.notifier);
 
-    _triggerAnimation(context, side, TransferOperation.delete, entries.isNotEmpty && entries.first.isDirectory);
-
-    await service.delete(
-      provider: provider,
-      entries: entries,
-    );
-
-    // Clear selection and refresh
-    if (side == PanelSide.a) {
-      ref.read(panelAProvider.notifier).clearSelection();
-    } else {
-      ref.read(panelBProvider.notifier).clearSelection();
+    // Check if any directory is NOT empty
+    bool hasNonEmptyDir = false;
+    for (final entry in entries) {
+      if (entry.isDirectory) {
+        try {
+          final children = await provider.list(entry.path, const ListOptions(showHidden: true));
+          if (children.isNotEmpty) {
+            hasNonEmptyDir = true;
+            break;
+          }
+        } catch (e) {
+          // If we can't read it, assume it's non-empty to be safe
+          hasNonEmptyDir = true;
+          break;
+        }
+      }
     }
 
-    await ref.read(panelControllerProvider.notifier).refresh(side);
+    if (hasNonEmptyDir) {
+      if (!context.mounted) return;
+      final result = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(l10n.confirmDeleteTitle),
+          content: Text('Seçili klasörlerden bazıları dolu. Kalıcı olarak silinecekler. Emin misiniz?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(l10n.actionCancel),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.error,
+              ),
+              onPressed: () => Navigator.pop(context, true),
+              child: Text(l10n.actionDelete),
+            ),
+          ],
+        ),
+      );
+      if (result != true) return;
+    }
+
+    try {
+      if (!context.mounted) return;
+
+      await service.delete(
+        provider: provider,
+        entries: entries,
+      );
+      
+      if (context.mounted) {
+        _triggerAnimation(context, side, TransferOperation.delete, entries.isNotEmpty && entries.first.isDirectory);
+      }
+
+      // Clear selection and refresh
+
+      await ref.read(panelControllerProvider.notifier).refresh(side);
+    } catch (e) {
+      if (context.mounted) {
+        _showErrorSnackBar(context, e.toString());
+      }
+    }
   }
 
   /// Show new folder dialog
@@ -281,6 +328,67 @@ class FileOperationsActions extends _$FileOperationsActions {
     }
   }
 
+  /// Show new file dialog
+  Future<void> showNewFileDialog(
+    BuildContext context,
+    PanelSide side,
+  ) async {
+    final l10n = gen.AppLocalizations.of(context)!;
+    final controller = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Yeni Dosya'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: InputDecoration(
+            labelText: l10n.propertiesName,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(l10n.actionCancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: Text(l10n.actionSave),
+          ),
+        ],
+      ),
+    );
+
+    controller.dispose();
+
+    if (result == null || result.isEmpty) return;
+
+    final panelState = side == PanelSide.a
+        ? ref.read(panelAProvider)
+        : ref.read(panelBProvider);
+
+    final provider = _getProviderForSide(side);
+    final service = ref.read(fileOperationsServiceProvider.notifier);
+
+    try {
+      await service.createFile(
+        provider: provider,
+        parentPath: panelState.activeTab.currentPath,
+        name: result,
+      );
+      await ref.read(panelControllerProvider.notifier).refresh(side);
+
+      // Open the created file
+      final newFilePath = provider.joinPath(panelState.activeTab.currentPath, result);
+      final fileOpenService = ref.read(fileOpenServiceProvider.notifier);
+      await fileOpenService.openWithDefault(newFilePath);
+    } catch (e) {
+      if (context.mounted) {
+        _showErrorSnackBar(context, e.toString());
+      }
+    }
+  }
+
   /// Show file properties dialog
   Future<void> showPropertiesDialog(
     BuildContext context,
@@ -323,7 +431,6 @@ class FileOperationsActions extends _$FileOperationsActions {
     );
   }  /// Copy selected entries from source panel to the other panel
   Future<void> copyToOtherPanel(BuildContext context, PanelSide sourceSide) async {
-    print('ACTION: copyToOtherPanel called for $sourceSide');
     final sourceState = sourceSide == PanelSide.a
         ? ref.read(panelAProvider)
         : ref.read(panelBProvider);
@@ -352,14 +459,12 @@ class FileOperationsActions extends _$FileOperationsActions {
     final entries = sourceState.activeTab.selectedEntries;
     _triggerAnimation(context, sourceSide, TransferOperation.copy, entries.isNotEmpty && entries.first.isDirectory);
 
-    print('ACTION: Starting service.copy to $destPath');
     await service.copy(
       sourceProvider: sourceProvider,
       entries: sourceState.activeTab.selectedEntries,
       destProvider: destProvider,
       destPath: destPath,
     );
-    print('ACTION: service.copy completed');
 
     await ref.read(panelControllerProvider.notifier).refresh(destSide);
   }
@@ -571,41 +676,60 @@ class FileOperationsActions extends _$FileOperationsActions {
     await ref.read(panelControllerProvider.notifier).refresh(destSide);
   }
 
-  /// Delete selected entries from the given panel without confirmation
+  /// Delete selected entries from the given panel
   Future<void> deleteSelected(BuildContext context, PanelSide side) async {
     final state = side == PanelSide.a
         ? ref.read(panelAProvider)
         : ref.read(panelBProvider);
 
-    if (!state.activeTab.hasSelection) return;
-
-    final provider = _getProviderForSide(side);
-    final service = ref.read(fileOperationsServiceProvider.notifier);
-
     final entries = state.activeTab.selectedEntries;
-    _triggerAnimation(context, side, TransferOperation.delete, entries.isNotEmpty && entries.first.isDirectory);
+    if (entries.isEmpty) return;
 
-    await service.delete(
-      provider: provider,
-      entries: state.activeTab.selectedEntries,
-    );
-
-    if (side == PanelSide.a) {
-      ref.read(panelAProvider.notifier).clearSelection();
-    } else {
-      ref.read(panelBProvider.notifier).clearSelection();
-    }
-
-    await ref.read(panelControllerProvider.notifier).refresh(side);
+    await _executeDeleteOrAsk(context, side, entries);
   }
 
   /// Open a file with the system default application
-  Future<void> openWithDefault(BuildContext context, FileEntry entry) async {
+  Future<void> openWithDefault(BuildContext context, PanelSide side, FileEntry entry) async {
+    final archiveService = ref.read(archiveServiceProvider.notifier);
+    if (archiveService.isArchive(entry.path)) {
+      // Eğer dosya bir arşivse (ZIP vs.), Finder (Archive Utility) yerine kendi çıkartma fonksiyonumuzu kullanalım.
+      await extractArchive(context, side, entry);
+      return;
+    }
+
     final openService = ref.read(fileOpenServiceProvider.notifier);
     final success = await openService.openWithDefault(entry.path);
 
     if (!success && context.mounted) {
       _showErrorSnackBar(context, 'Failed to open: ${entry.name}');
+    }
+  }
+
+  /// Ask the user to choose an application and open the file
+  Future<void> chooseAppAndOpen(BuildContext context, FileEntry entry) async {
+    if (Platform.isMacOS) {
+      final appPath = await MacAppPickerDialog.show(context);
+      if (appPath != null && appPath.isNotEmpty) {
+        try {
+          await Process.run('open', ['-a', appPath, entry.path]);
+        } catch (_) {
+          if (context.mounted) {
+            _showWarningSnackBar(context, 'Şununla açılamadı: ${entry.name}');
+          }
+        }
+      } else {
+        if (context.mounted) {
+          _showWarningSnackBar(context, 'İşlem iptal edildi.');
+        }
+      }
+      return;
+    }
+
+    final openService = ref.read(fileOpenServiceProvider.notifier);
+    final success = await openService.chooseAppAndOpen(entry.path);
+
+    if (!success && context.mounted) {
+      _showWarningSnackBar(context, 'Şununla açılamadı veya iptal edildi: ${entry.name}');
     }
   }
 
@@ -627,9 +751,9 @@ class FileOperationsActions extends _$FileOperationsActions {
     ArchiveFormat format,
   ) async {
     final l10n = gen.AppLocalizations.of(context)!;
-    final panelState = side == PanelSide.a
-        ? ref.read(panelAProvider)
-        : ref.read(panelBProvider);
+    final destPanelState = side == PanelSide.a
+        ? ref.read(panelBProvider)
+        : ref.read(panelAProvider);
 
     // Suggest archive name based on first entry or selection
     final suggestedName = entries.length == 1
@@ -675,11 +799,14 @@ class FileOperationsActions extends _$FileOperationsActions {
     try {
       await archiveService.compress(
         entries: entries,
-        destDir: panelState.activeTab.currentPath,
+        destDir: destPanelState.activeTab.currentPath,
         archiveName: result,
         format: format,
       );
-      await ref.read(panelControllerProvider.notifier).refresh(side);
+      // Refresh the destination panel
+      await ref.read(panelControllerProvider.notifier).refresh(
+        side == PanelSide.a ? PanelSide.b : PanelSide.a,
+      );
     } catch (e) {
       if (context.mounted) {
         _showErrorSnackBar(context, e.toString());
@@ -687,27 +814,264 @@ class FileOperationsActions extends _$FileOperationsActions {
     }
   }
 
-  /// Extract an archive to the current directory
+  /// Compress entries into a password-protected ZIP.
+  /// Shows an archive name dialog + password dialog before compressing.
+  Future<void> compressEntriesWithPassword(
+    BuildContext context,
+    PanelSide side,
+    List<FileEntry> entries,
+  ) async {
+    final destPanelState = side == PanelSide.a
+        ? ref.read(panelBProvider)
+        : ref.read(panelAProvider);
+
+    // 1. Ask for archive name
+    final suggestedName = entries.length == 1 ? entries.first.name : 'archive';
+    final nameCtrl = TextEditingController(text: suggestedName);
+    final archiveName = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Şifreli ZIP'),
+        content: TextField(
+          controller: nameCtrl,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Arşiv adı', suffixText: '.zip'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('İptal')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, nameCtrl.text), child: const Text('Devam')),
+        ],
+      ),
+    );
+    nameCtrl.dispose();
+    if (archiveName == null || archiveName.isEmpty) return;
+
+    // 2. Ask for password (with confirmation)
+    final pwdCtrl = TextEditingController();
+    final pwd2Ctrl = TextEditingController();
+    final password = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        bool obscure = true;
+        return StatefulBuilder(
+          builder: (ctx2, setSt) => AlertDialog(
+            title: const Text('Şifre belirleyin'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: pwdCtrl,
+                  obscureText: obscure,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    labelText: 'Şifre',
+                    suffixIcon: IconButton(
+                      icon: Icon(obscure ? Icons.visibility_off : Icons.visibility),
+                      onPressed: () => setSt(() => obscure = !obscure),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: pwd2Ctrl,
+                  obscureText: obscure,
+                  decoration: const InputDecoration(labelText: 'Şifreyi tekrar girin'),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx2), child: const Text('İptal')),
+              FilledButton(
+                onPressed: () {
+                  if (pwdCtrl.text != pwd2Ctrl.text) {
+                    ScaffoldMessenger.of(ctx2).showSnackBar(
+                      const SnackBar(content: Text('Şifreler eşleşmiyor!')),
+                    );
+                    return;
+                  }
+                  if (pwdCtrl.text.isEmpty) {
+                    ScaffoldMessenger.of(ctx2).showSnackBar(
+                      const SnackBar(content: Text('Şifre boş olamaz!')),
+                    );
+                    return;
+                  }
+                  Navigator.pop(ctx2, pwdCtrl.text);
+                },
+                child: const Text('Sıkıştır'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    pwdCtrl.dispose();
+    pwd2Ctrl.dispose();
+    if (password == null) return;
+
+    // 3. Compress using native zip -e -P (macOS/Linux)
+    final destDir = destPanelState.activeTab.currentPath;
+    final sourceDir = side == PanelSide.a
+        ? ref.read(panelAProvider).activeTab.currentPath
+        : ref.read(panelBProvider).activeTab.currentPath;
+        
+    final outputPath = '$destDir/$archiveName.zip';
+    // Use relative names so we don't capture full absolute paths in the zip
+    final sourceNames = entries.map((e) => e.name).toList();
+
+    // Show loading dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Text('Şifreli ZIP oluşturuluyor, lütfen bekleyin...'),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      // GÜVENLIK: Şifreyi -P argümanı yerine stdin üzerinden gönderiyoruz
+      // böylece `ps aux` ile şifre görünmez.
+      final args = ['-r', '-e', '-P', '-', outputPath, ...sourceNames];
+      final process = await Process.start('zip', args, workingDirectory: sourceDir);
+      process.stdin.writeln(password); // şifreyi stdin'e yaz
+      await process.stdin.close();
+      final exitCode = await process.exitCode;
+      final stderr = await process.stderr.transform(utf8.decoder).join();
+      
+      // Close loading dialog
+      if (context.mounted) Navigator.pop(context);
+      
+      if (exitCode != 0) {
+        throw Exception(stderr);
+      }
+      
+      final destSide = side == PanelSide.a ? PanelSide.b : PanelSide.a;
+      await ref.read(panelControllerProvider.notifier).refresh(destSide);
+      
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$archiveName.zip başarıyla oluşturuldu!')),
+        );
+      }
+    } catch (e) {
+      // Close loading dialog if still open
+      if (context.mounted) Navigator.pop(context);
+      if (context.mounted) _showErrorSnackBar(context, e.toString());
+    }
+  }
+
   Future<void> extractArchive(
     BuildContext context,
     PanelSide side,
     FileEntry entry,
   ) async {
-    final panelState = side == PanelSide.a
-        ? ref.read(panelAProvider)
-        : ref.read(panelBProvider);
+    final destPanelState = side == PanelSide.a
+        ? ref.read(panelBProvider)
+        : ref.read(panelAProvider);
 
     final archiveService = ref.read(archiveServiceProvider.notifier);
 
-    try {
-      await archiveService.extract(
-        archivePath: entry.path,
-        destDir: panelState.activeTab.currentPath,
+    // 1. Check if encrypted
+    final isEncrypted = await archiveService.isEncryptedZip(entry.path);
+    String? password;
+
+    if (isEncrypted) {
+      // Ask for password
+      final pwdCtrl = TextEditingController();
+      bool obscure = true;
+      password = await showDialog<String>(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx2, setSt) => AlertDialog(
+            title: const Text('Şifreli Arşiv'),
+            content: TextField(
+              controller: pwdCtrl,
+              obscureText: obscure,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: 'Şifre',
+                suffixIcon: IconButton(
+                  icon: Icon(obscure ? Icons.visibility_off : Icons.visibility),
+                  onPressed: () => setSt(() => obscure = !obscure),
+                ),
+              ),
+              onSubmitted: (v) => Navigator.pop(ctx2, v),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx2), child: const Text('İptal')),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx2, pwdCtrl.text),
+                child: const Text('Tamam'),
+              ),
+            ],
+          ),
+        ),
       );
-      await ref.read(panelControllerProvider.notifier).refresh(side);
-    } catch (e) {
+      pwdCtrl.dispose();
+      
+      // If user cancelled password dialog
+      if (password == null || password.isEmpty) return;
+    }
+
+    try {
+      final destSide = side == PanelSide.a ? PanelSide.b : PanelSide.a;
+      final progressNotifier = ref.read(operationProgressProvider.notifier);
+
+      Stream<TransferProgress> progressStream;
+      if (isEncrypted && password != null) {
+        progressStream = archiveService.extractWithPassword(
+          archivePath: entry.path,
+          destDir: destPanelState.activeTab.currentPath,
+          password: password,
+        );
+      } else {
+        progressStream = archiveService.extract(
+          archivePath: entry.path,
+          destDir: destPanelState.activeTab.currentPath,
+        );
+      }
+
+      String? lastFile;
+      await for (final progress in progressStream) {
+        progressNotifier.setProgress(progress);
+        
+        // Trigger animation only for new files (avoid spamming)
+        if (progress.currentFile != null && progress.currentFile!.name != lastFile && progress.currentFile!.name != 'Done') {
+          lastFile = progress.currentFile!.name;
+          _triggerAnimation(context, side, TransferOperation.copy, false);
+        }
+      }
+      
+      progressNotifier.clear();
+
+      await ref.read(panelControllerProvider.notifier).refresh(destSide);
+      
       if (context.mounted) {
-        _showErrorSnackBar(context, e.toString());
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Arşiv başarıyla çıkartıldı!')),
+        );
+      }
+    } catch (e) {
+      ref.read(operationProgressProvider.notifier).clear();
+      if (context.mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Arşiv Hatası'),
+            content: Text(e.toString().replaceAll('Exception:', '').trim()),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Tamam'),
+              ),
+            ],
+          ),
+        );
       }
     }
   }
@@ -724,6 +1088,15 @@ class FileOperationsActions extends _$FileOperationsActions {
       SnackBar(
         content: Text(message),
         backgroundColor: Theme.of(context).colorScheme.error,
+      ),
+    );
+  }
+
+  void _showWarningSnackBar(BuildContext context, String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.orange,
       ),
     );
   }

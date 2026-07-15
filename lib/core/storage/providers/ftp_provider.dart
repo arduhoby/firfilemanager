@@ -67,12 +67,17 @@ class FtpProvider implements StorageProvider {
 
   @override
   Future<void> disconnect() async {
+    if (_ftp != null) {
+      try {
+        await _ftp!.disconnect();
+      } catch (_) {}
+      _ftp = null;
+    }
     _isConnected = false;
-    _connectionController.add(false);
-    try {
-      await _ftp?.disconnect();
-    } catch (_) {}
-    _ftp = null;
+    if (!_connectionController.isClosed) {
+      _connectionController.add(false);
+      await _connectionController.close();
+    }
   }
 
   @override

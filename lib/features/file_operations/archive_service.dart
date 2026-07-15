@@ -1,10 +1,12 @@
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../core/storage/models/file_entry.dart';
+import '../../core/storage/models/transfer_progress.dart';
 import 'file_operations_state.dart';
 
 part 'archive_service.g.dart';
@@ -94,10 +96,10 @@ class ArchiveService extends _$ArchiveService {
   ///
   /// [archivePath] — path to the archive file
   /// [destDir] — destination directory
-  Future<void> extract({
+  Stream<TransferProgress> extract({
     required String archivePath,
     required String destDir,
-  }) async {
+  }) async* {
     final inputFile = File(archivePath);
     final inputBytes = inputFile.readAsBytesSync();
 
@@ -122,6 +124,20 @@ class ArchiveService extends _$ArchiveService {
       final outputName = p.basenameWithoutExtension(archivePath);
       final outputFile = File(p.join(destDir, outputName));
       outputFile.writeAsBytesSync(decompressed);
+      final entry = FileEntry(
+        name: outputName,
+        path: outputFile.path,
+        isDirectory: false,
+        size: decompressed.length,
+        modified: DateTime.now(),
+      );
+      yield TransferProgress(
+        operation: TransferOperation.copy,
+        state: TransferState.completed,
+        currentFile: entry,
+        totalBytes: decompressed.length,
+        bytesTransferred: decompressed.length,
+      );
       return;
     }
 
@@ -129,20 +145,79 @@ class ArchiveService extends _$ArchiveService {
       throw Exception('Unsupported archive format: $ext');
     }
 
-    // Extract all files
+    final smartDestDir = _getSmartExtractDir(archive, destDir, archivePath);
+
+    int totalBytes = 0;
     for (final file in archive) {
-      final filePath = p.join(destDir, file.name);
+      totalBytes += file.size;
+    }
+    int transferredBytes = 0;
+
+    // Extract all files
+    final normalizedDestDir = p.normalize(smartDestDir);
+    for (final file in archive) {
+      final filePath = p.join(smartDestDir, file.name);
 
       if (file.isFile) {
+        // --- ZIP SLIP KORUMASI ---
+        final resolvedPath = p.normalize(filePath);
+        if (!resolvedPath.startsWith(normalizedDestDir)) {
+          throw Exception(
+            'Güvenlik ihlali: Arşiv hedef dizin dışına yazma girişiminde bulundu (Zip Slip). Dosya: ${file.name}',
+          );
+        }
+        // -------------------------
+        final entry = FileEntry(
+          name: file.name,
+          path: filePath,
+          isDirectory: false,
+          size: file.size,
+          modified: DateTime.now(),
+        );
+        yield TransferProgress(
+          operation: TransferOperation.copy,
+          state: TransferState.inProgress,
+          currentFile: entry,
+          totalBytes: totalBytes,
+          bytesTransferred: transferredBytes,
+        );
         final data = file.content as List<int>;
         final outFile = File(filePath);
-        outFile.parent.createSync(recursive: true);
-        outFile.writeAsBytesSync(data);
+        outFile.createSync(recursive: true);
+        await outFile.writeAsBytes(data);
+        transferredBytes += file.size;
+
+        // Yield to the event loop so the UI (progress bar & animation) can update
+        await Future.delayed(const Duration(milliseconds: 16));
       } else {
-        final dir = Directory(filePath);
-        dir.createSync(recursive: true);
+        Directory(filePath).createSync(recursive: true);
       }
     }
+    
+    yield TransferProgress(
+      operation: TransferOperation.copy,
+      state: TransferState.completed,
+      totalBytes: totalBytes,
+      bytesTransferred: transferredBytes,
+    );
+  }
+
+  /// Evaluates if the archive should be extracted into a subfolder to prevent clutter.
+  String _getSmartExtractDir(Archive archive, String destDir, String archivePath) {
+    final rootItems = <String>{};
+    for (final file in archive) {
+      final parts = p.split(file.name);
+      if (parts.isNotEmpty) {
+        rootItems.add(parts.first);
+      }
+    }
+
+    // If multiple root items exist, extract into a folder named after the archive
+    if (rootItems.length > 1) {
+      final name = p.basenameWithoutExtension(archivePath);
+      return p.join(destDir, name);
+    }
+    return destDir;
   }
 
   /// Check if a file is a supported archive format
@@ -178,5 +253,109 @@ class ArchiveService extends _$ArchiveService {
         _addFileToArchive(archive, entity.path, entryName);
       }
     }
+  }
+
+  /// Check if the zip file is encrypted (requires macOS native `unzip`)
+  Future<bool> isEncryptedZip(String archivePath) async {
+    final ext = p.extension(archivePath).toLowerCase();
+    if (ext != '.zip') return false;
+
+    try {
+      final result = await Process.run('unzip', ['-Z', '-v', archivePath]);
+      return result.stdout.toString().toLowerCase().contains('encrypted');
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// Extract an encrypted ZIP using macOS native `unzip` with password.
+  /// Applies Smart Extract logic by peeking into the ZIP via the Dart archive package.
+  Stream<TransferProgress> extractWithPassword({
+    required String archivePath,
+    required String destDir,
+    required String password,
+  }) async* {
+    // 1. Determine smart extract directory
+    final inputFile = File(archivePath);
+    final inputBytes = inputFile.readAsBytesSync();
+    final archive = ZipDecoder().decodeBytes(inputBytes, verify: false);
+    
+    final smartDestDir = _getSmartExtractDir(archive, destDir, archivePath);
+    Directory(smartDestDir).createSync(recursive: true);
+    
+    int totalBytes = 0;
+    for (final file in archive) {
+      totalBytes += file.size;
+    }
+    int transferredBytes = 0;
+
+    // 2. Extract using native unzip (since dart archive package doesn't support decryption)
+    // Exclude macOS specific resource forks and hidden files to avoid clutter
+    // GÜVENLIK: Şifreyi -P argümanı yerine stdin üzerinden gönderiyoruz,
+    // böylece `ps aux` ile şifre görünmez.
+    final process = await Process.start(
+      'unzip',
+      ['-P', '-', '-o', archivePath, '-d', smartDestDir, '-x', '__MACOSX/*', '*/._*'],
+    );
+    // stdin'e şifreyi yaz ve kapat
+    process.stdin.writeln(password);
+    await process.stdin.close();
+
+    final stdoutStream = process.stdout.transform(const Utf8Decoder(allowMalformed: true)).transform(const LineSplitter());
+    final stderrStream = process.stderr.transform(utf8.decoder).transform(const LineSplitter());
+    
+    final stderrBuffer = StringBuffer();
+    stderrStream.listen((line) {
+      stderrBuffer.writeln(line);
+    });
+
+    await for (final line in stdoutStream) {
+      if (line.contains('inflating: ') || line.contains('extracting: ')) {
+        final parts = line.split(':');
+        if (parts.length > 1) {
+          final fileName = parts[1].trim();
+          // Approximate progress
+          transferredBytes += (totalBytes / archive.length).round();
+          if (transferredBytes > totalBytes) transferredBytes = totalBytes;
+          
+          final filePath = p.join(smartDestDir, fileName);
+          final entry = FileEntry(
+            name: fileName,
+            path: filePath,
+            isDirectory: false,
+            size: 0,
+            modified: DateTime.now(),
+          );
+          yield TransferProgress(
+            operation: TransferOperation.copy,
+            state: TransferState.inProgress,
+            currentFile: entry,
+            totalBytes: totalBytes,
+            bytesTransferred: transferredBytes,
+          );
+        }
+      }
+    }
+
+    final exitCode = await process.exitCode;
+
+    // unzip returns:
+    // 0 = normal
+    // 1 = warning (often non-fatal like symlink creation fail or extra bytes)
+    // 2 = generic error (can often still complete successfully)
+    // 82 = wrong password
+    if (exitCode != 0 && exitCode != 1 && exitCode != 2) {
+      if (exitCode == 82) {
+        throw Exception('Hatalı şifre (Wrong password).');
+      }
+      throw Exception('Arşiv çıkarma hatası (Exit code: $exitCode): ${stderrBuffer.toString()}');
+    }
+    
+    yield TransferProgress(
+      operation: TransferOperation.copy,
+      state: TransferState.completed,
+      totalBytes: totalBytes,
+      bytesTransferred: totalBytes,
+    );
   }
 }

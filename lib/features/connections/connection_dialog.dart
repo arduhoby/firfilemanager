@@ -243,8 +243,7 @@ class _ConnectionDialogState extends ConsumerState<ConnectionDialog> {
                       _selectedType = value;
                       if (value == ConnectionType.gdrive ||
                           value == ConnectionType.onedrive ||
-                          value == ConnectionType.dropbox ||
-                          value == ConnectionType.nextcloud) {
+                          value == ConnectionType.dropbox) {
                         _selectedAuth = AuthMethod.oauth2;
                         
                         try {
@@ -330,7 +329,7 @@ class _ConnectionDialogState extends ConsumerState<ConnectionDialog> {
               ],
 
               // Auth method dropdown (Only show if applicable)
-              if (_selectedAuth != AuthMethod.oauth2 || _selectedType == ConnectionType.nextcloud) ...[
+              if (_selectedAuth != AuthMethod.oauth2) ...[
                 DropdownButtonFormField<AuthMethod>(
                   value: _selectedAuth,
                   decoration: InputDecoration(
@@ -345,8 +344,7 @@ class _ConnectionDialogState extends ConsumerState<ConnectionDialog> {
                     const DropdownMenuItem(value: AuthMethod.anonymous, child: Text('Anonim')),
                     if (_selectedType == ConnectionType.gdrive ||
                         _selectedType == ConnectionType.onedrive ||
-                        _selectedType == ConnectionType.dropbox ||
-                        _selectedType == ConnectionType.nextcloud)
+                        _selectedType == ConnectionType.dropbox)
                       const DropdownMenuItem(value: AuthMethod.oauth2, child: Text('OAuth2')),
                   ],
                   onChanged: (value) {
