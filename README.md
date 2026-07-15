@@ -7,11 +7,12 @@ Fir File Manager is a modern, cross-platform dual-pane file manager built with F
 ## Features
 
 - **Adaptive Dual-Pane Shell**: Two-pane interface for highly efficient file navigation and operations.
-- **Advanced Sync (Directory Synchronization)**: Includes a recursive directory sync analyzer with a **Tree-View Sync Preview Dialog**. Automatically checks for Missing, Modified, and Identical files before syncing.
-- **Rich Media Feedback**: Features stunning glass-morphism progress bars and **animated flying file icons** across the screen during operations, complete with satisfying sound effects (e.g. paper crumple on delete, swoosh on copy/move).
+- **Advanced Sync & Equalization**: Includes a recursive directory sync analyzer with a **Tree-View Sync Preview Dialog** and a **Quick Panel Equalization (=)** shortcut in the context menu to easily align directories between panels.
+- **Interactive Open With & Recents**: Offers an OS-native or customized application picker to open any file, alongside intelligent caching for **Recent Folders, Files, and Applications** for rapid workflow navigation.
+- **Rich Media Feedback**: Features stunning glass-morphism progress bars, **animated flying file icons** across the screen, and custom **sound effects toggleable via settings** (e.g. paper crumple on delete, swoosh on copy/move).
 - **Extensive File Operations**: Seamlessly Copy, Cut, Paste, Rename, Move, and Delete files and directories.
 - **Drag & Drop Support**: Move files effortlessly between panels with drag and drop capabilities.
-- **Keyboard Shortcuts**: Fully keyboard navigable for power users (F5 for Copy, F6 for Move, Cmd+C/Cmd+V, etc.).
+- **Keyboard Shortcuts & Clean UI**: Fully keyboard navigable for power users (F5 for Copy, F6 for Move, Cmd+C/Cmd+V, etc.) with custom hover-animated buttons built from state-of-the-art design systems.
 - **Multi-Protocol Support (WIP)**: Built-in abstractions for Local, FTP, and SMB file systems.
 
 ## Getting Started
@@ -30,11 +31,12 @@ Fir File Manager, Flutter ile geliştirilmiş modern, çok platformlu ve çift p
 ## Özellikler
 
 - **Çift Panelli Arayüz (Dual-Pane Shell)**: Dosyalar arasında gezinmeyi ve dosya taşıma/kopyalama işlemlerini inanılmaz derecede hızlandıran çift panel düzeni.
-- **Gelişmiş Senkronizasyon (Sync)**: İki klasörü eşitlemek için detaylı tarama yapar. **Ağaç (Tree) görünümlü önizleme penceresi** sayesinde eksik (kırmızı), değişmiş (koyu mavi) ve birebir aynı (yeşil) olan dosyaları hiyerarşik olarak gösterir ve işlem öncesi onayınıza sunar.
-- **Görsel ve İşitsel Geri Bildirim**: Dosya transferleri sırasında alt kısımda beliren "Glassmorphism" tasarımlı işlem merkezine ek olarak, kopyalama veya taşıma yaparken ekranda paneller arası **uçan şık dosya ikonları** görünür. İşlemlere (örneğin silme işleminde kağıt buruşturma) özel tatmin edici ses efektleri eşlik eder.
+- **Gelişmiş Senkronizasyon ve Eşitleme (=)**: İki klasörü eşitlemek için detaylı tarama ve **Ağaç (Tree) görünümlü önizleme penceresi** sunar. Ayrıca sağ tık menüsündeki hızlı **Eşitleme (=)** komutuyla hedef paneli aktif panelin yoluna saniyeler içinde getirebilirsiniz.
+- **Akıllı Geçmiş ve Şununla Aç**: Dosyaları açmak için yerel işletim sistemi uygulamalarını veya özelleştirilmiş uygulama seçiciyi kullanır. Gezinme alışkanlıklarınızı takip ederek **Son Kullanılan Dosyalar, Klasörler ve Uygulamalar** için hızlı kısayollar sunar.
+- **Görsel ve İşitsel Geri Bildirim**: Dosya transferleri sırasında alt kısımda beliren "Glassmorphism" tasarımlı işlem merkezine ek olarak, ekranda paneller arası **uçan şık dosya ikonları** görünür. Ayarlardan kapatılabilen tatmin edici ses efektleri eşlik eder.
 - **Kapsamlı Dosya İşlemleri**: Kopyalama, kesme, yapıştırma, yeniden adlandırma, taşıma ve silme gibi tüm klasik dosya işlemlerini destekler.
 - **Sürükle & Bırak (Drag & Drop)**: Paneller arasında dosyaları farenizle rahatça sürükleyip bırakabilirsiniz.
-- **Klavye Kısayolları**: Gelişmiş kullanıcılar için tamamen klavye ile yönetilebilir yapı (F5 Kopyalama, F6 Taşıma, Cmd+C/Cmd+V vb.).
+- **Klavye Kısayolları ve Modern Arayüz**: Gelişmiş kullanıcılar için tamamen klavye ile yönetilebilir yapı (F5 Kopyalama, F6 Taşıma, Cmd+C/Cmd+V vb.) ve Uiverse tabanlı modern animasyonlu butonlar.
 - **Çoklu Protokol (WIP)**: Yerel (Local), FTP ve SMB dosya sistemleri için esnek altyapı destekleri içerir.
 
 ## Başlangıç
