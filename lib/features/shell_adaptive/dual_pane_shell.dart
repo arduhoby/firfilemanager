@@ -539,72 +539,12 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
       required VoidCallback? onPressed,
       Color? color,
     }) {
-      final active = onPressed != null;
-
-      return Tooltip(
-        message: label,
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(12),
-            onTap: onPressed,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: active
-                    ? BoxDecoration(
-                        color: color?.withValues(alpha: 0.15) ?? theme.colorScheme.primary.withValues(alpha: 0.12),
-                        border: Border(
-                          top: BorderSide(color: Colors.white.withValues(alpha: 0.25), width: 0.8),
-                          left: BorderSide(color: Colors.white.withValues(alpha: 0.25), width: 0.8),
-                          bottom: BorderSide(
-                            color: color ?? theme.colorScheme.primary,
-                            width: 2.5,
-                          ),
-                          right: BorderSide(
-                            color: color ?? theme.colorScheme.primary,
-                            width: 1.2,
-                          ),
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.15),
-                            blurRadius: 1,
-                            offset: const Offset(0, 1),
-                          )
-                        ],
-                      )
-                    : const BoxDecoration(
-                        color: Colors.transparent,
-                      ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      icon,
-                      size: 13,
-                      color: active
-                          ? (color ?? theme.colorScheme.primary)
-                          : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      label,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        fontSize: 10.5,
-                        fontWeight: active ? FontWeight.bold : FontWeight.normal,
-                        color: active
-                            ? (theme.brightness == Brightness.dark ? Colors.white : Colors.black)
-                            : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
+      return _UiverseActionButton(
+        icon: icon,
+        label: label,
+        onPressed: onPressed,
+        color: color,
+        theme: theme,
       );
     }
 
@@ -681,55 +621,12 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
                       ? Colors.red.withValues(alpha: 0.8)
                       : null,
                 ),
-                const _FnDivider(),
-                actionButton(
-                  icon: Icons.content_copy,
-                  label: l10n.actionCopy,
-                  onPressed: hasSelection
-                      ? () => actions.copyToClipboard(
-                          activeSide,
-                          activeState.activeTab.selectedEntries,
-                        )
-                      : null,
-                ),
-                const SizedBox(width: 2),
-                actionButton(
-                  icon: Icons.content_cut,
-                  label: l10n.actionMove,
-                  onPressed: hasSelection
-                      ? () => actions.cutToClipboard(
-                          activeSide,
-                          activeState.activeTab.selectedEntries,
-                        )
-                      : null,
-                ),
-                const SizedBox(width: 2),
                 actionButton(
                   icon: Icons.content_paste,
                   label: l10n.actionPaste,
                   onPressed: clipboard == null || clipboard.sourcePaths.isEmpty
                       ? null
                       : () => actions.paste(context, activeSide),
-                ),
-                const _FnDivider(),
-                actionButton(
-                  icon: Icons.select_all_outlined,
-                  label: l10n.actionSelectAll,
-                  onPressed: () {
-                    if (activeSide == PanelSide.a) {
-                      ref.read(panelAProvider.notifier).selectAll();
-                    } else {
-                      ref.read(panelBProvider.notifier).selectAll();
-                    }
-                  },
-                ),
-                const SizedBox(width: 2),
-                actionButton(
-                  icon: Icons.refresh,
-                  label: l10n.actionRefresh,
-                  onPressed: () => ref
-                      .read(panelControllerProvider.notifier)
-                      .refresh(activeSide),
                 ),
                 const SizedBox(width: 2),
                 actionButton(
@@ -1111,4 +1008,113 @@ class RefreshIntent extends Intent {
 
 class ToggleHiddenIntent extends Intent {
   const ToggleHiddenIntent();
+}
+
+class _UiverseActionButton extends StatefulWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback? onPressed;
+  final Color? color;
+  final ThemeData theme;
+
+  const _UiverseActionButton({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+    this.color,
+    required this.theme,
+  });
+
+  @override
+  State<_UiverseActionButton> createState() => _UiverseActionButtonState();
+}
+
+class _UiverseActionButtonState extends State<_UiverseActionButton> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = widget.onPressed != null;
+    final isDark = widget.theme.brightness == Brightness.dark;
+    final turquoise = isDark ? const Color(0xFF00E5FF) : const Color(0xFF00838F);
+    final btnColor = widget.color ?? turquoise;
+
+    // Default (not hovered) backgrounds: light mode = white, dark mode = black
+    final defaultBgColor = isDark ? Colors.black : Colors.white;
+
+    // Hover durumunda doluluk rengi (turkuaz), değilse tema rengi (siyah/beyaz)
+    final bgColor = active 
+        ? (_isHovered ? btnColor : defaultBgColor)
+        : Colors.transparent;
+
+    // Hover durumunda yazının/ikonun rengi zıt renge dönsün, değilse turkuaz
+    final contentColor = active
+        ? (_isHovered 
+            ? (isDark ? Colors.black : Colors.white) 
+            : btnColor)
+        : widget.theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4);
+
+    return Tooltip(
+      message: widget.label,
+      child: MouseRegion(
+        onEnter: (_) {
+          if (active) setState(() => _isHovered = true);
+        },
+        onExit: (_) {
+          if (active) setState(() => _isHovered = false);
+        },
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(11),
+            onTap: widget.onPressed,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutCubic,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: bgColor,
+                borderRadius: BorderRadius.circular(11),
+                border: Border.all(
+                  color: active ? btnColor : widget.theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.2),
+                  width: 2.0,
+                ),
+                boxShadow: active ? [
+                  BoxShadow(
+                    color: const Color(0xFF0A192F).withValues(alpha: 0.4), // Koyu lacivert gölge
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  )
+                ] : null,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Hover durumunda ikonu sağa 4px kaydıran animasyon
+                  AnimatedPadding(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeOutCubic,
+                    padding: EdgeInsets.only(left: _isHovered ? 4.0 : 0.0, right: _isHovered ? 0.0 : 4.0),
+                    child: Icon(
+                      widget.icon,
+                      size: 13,
+                      color: contentColor,
+                    ),
+                  ),
+                  Text(
+                    widget.label,
+                    style: widget.theme.textTheme.labelSmall?.copyWith(
+                      fontSize: 10.5,
+                      fontWeight: active ? FontWeight.bold : FontWeight.normal,
+                      color: contentColor,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

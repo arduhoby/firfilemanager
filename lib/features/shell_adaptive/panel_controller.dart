@@ -5,6 +5,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../core/storage/storage_provider.dart';
 import '../../core/storage/storage_provider_service.dart';
+import '../../core/settings/recent_service.dart';
 import '../file_operations/file_operations_state.dart';
 
 part 'panel_controller.g.dart';
@@ -69,6 +70,11 @@ class PanelController extends _$PanelController {
         ref.read(panelAProvider.notifier).setEntries(entries);
       } else {
         ref.read(panelBProvider.notifier).setEntries(entries);
+      }
+
+      // Add to recent folders if it's local
+      if (provider.displayName == 'Local' && !path.startsWith(Platform.environment['HOME']! + '/Library/')) {
+        ref.read(recentServiceProvider.notifier).addRecentFolder(path);
       }
 
       // Setup file watcher for local directories to auto-refresh on external changes

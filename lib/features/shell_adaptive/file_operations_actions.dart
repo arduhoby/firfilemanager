@@ -17,6 +17,7 @@ import 'panel_controller.dart';
 import 'sync_preview_dialog.dart';
 import '../../core/storage/models/transfer_progress.dart';
 import '../../core/settings/settings_provider.dart';
+import '../../core/settings/recent_service.dart';
 import '../file_operations/mac_app_picker_dialog.dart';
 import 'flying_file_animation.dart';
 
@@ -697,6 +698,7 @@ class FileOperationsActions extends _$FileOperationsActions {
       return;
     }
 
+    ref.read(recentServiceProvider.notifier).addRecentFile(entry.path);
     final openService = ref.read(fileOpenServiceProvider.notifier);
     final success = await openService.openWithDefault(entry.path);
 
@@ -710,6 +712,8 @@ class FileOperationsActions extends _$FileOperationsActions {
     if (Platform.isMacOS) {
       final appPath = await MacAppPickerDialog.show(context);
       if (appPath != null && appPath.isNotEmpty) {
+        ref.read(recentServiceProvider.notifier).addRecentApp(appPath);
+        ref.read(recentServiceProvider.notifier).addRecentFile(entry.path);
         try {
           await Process.run('open', ['-a', appPath, entry.path]);
         } catch (_) {
@@ -727,6 +731,11 @@ class FileOperationsActions extends _$FileOperationsActions {
 
     final openService = ref.read(fileOpenServiceProvider.notifier);
     final success = await openService.chooseAppAndOpen(entry.path);
+    if (success) {
+      // NOTE: file_picker doesn't easily return the app path on Windows/Linux,
+      // but we still add the file to recent files.
+      ref.read(recentServiceProvider.notifier).addRecentFile(entry.path);
+    }
 
     if (!success && context.mounted) {
       _showWarningSnackBar(context, 'Şununla açılamadı veya iptal edildi: ${entry.name}');

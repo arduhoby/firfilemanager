@@ -10,6 +10,8 @@ import '../../core/storage/storage_provider.dart';
 import '../../core/theme/glass_container.dart';
 import '../../core/storage/storage_provider_service.dart';
 import '../../widgets/cascade_menu/cascade_menu.dart';
+import '../../core/storage/models/transfer_progress.dart';
+import '../../core/settings/recent_service.dart';
 import '../file_operations/archive_service.dart';
 import '../file_operations/file_operations_state.dart';
 import '../file_operations/file_open_service.dart';
@@ -287,6 +289,10 @@ class _FilePanelState extends ConsumerState<FilePanel> {
           CascadeMenuItem(value: 'openTerminal', label: 'Open in Terminal', icon: Icons.terminal),
         ] else ...[
           CascadeMenuItem(value: 'open', label: l10n.actionOpen, icon: Icons.folder_open),
+          ...ref.read(recentServiceProvider).recentApps.map((appPath) {
+            final appName = appPath.split('/').last.replaceAll('.app', '');
+            return CascadeMenuItem(value: 'recentApp_$appPath', label: '$appName ile aç', icon: Icons.launch);
+          }),
           const CascadeMenuItem(value: 'chooseAppAndOpen', label: 'Şununla aç...', icon: Icons.open_in_new),
         ],
         CascadeMenuItem(value: 'quickLook', label: 'Önizle (Quick Look)', icon: Icons.visibility),
@@ -331,6 +337,9 @@ class _FilePanelState extends ConsumerState<FilePanel> {
         const CascadeMenuItem(value: 'openTerminalBg', label: 'Open in Terminal', icon: Icons.terminal),
         CascadeMenuItem(value: 'revealBg', label: l10n.actionRevealInFinder, icon: Icons.search),
         const CascadeMenuItem(value: 'copyBgPath', label: 'Copy Path', icon: Icons.copy_all),
+        const CascadeMenuItem.divider(),
+        CascadeMenuItem(value: 'selectAll', label: l10n.actionSelectAll, icon: Icons.select_all),
+        CascadeMenuItem(value: 'refresh', label: l10n.actionRefresh, icon: Icons.refresh),
       ];
     }
 
@@ -356,6 +365,14 @@ class _FilePanelState extends ConsumerState<FilePanel> {
           case 'copyBgPath':
             Clipboard.setData(ClipboardData(text: _panelState.activeTab.currentPath));
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Path copied to clipboard')));
+          case 'selectAll':
+            if (widget.side == PanelSide.a) {
+              ref.read(panelAProvider.notifier).selectAll();
+            } else {
+              ref.read(panelBProvider.notifier).selectAll();
+            }
+          case 'refresh':
+            ref.read(panelControllerProvider.notifier).refresh(widget.side);
         }
         return;
       }
@@ -370,6 +387,16 @@ class _FilePanelState extends ConsumerState<FilePanel> {
           actions.chooseAppAndOpen(context, entry);
         case 'openWith':
           actions.openWithDefault(context, widget.side, entry);
+        case String v when v.startsWith('recentApp_'):
+          final appPath = v.substring('recentApp_'.length);
+          if (Platform.isMacOS) {
+            ref.read(recentServiceProvider.notifier).addRecentApp(appPath);
+            ref.read(recentServiceProvider.notifier).addRecentFile(entry.path);
+            Process.run('open', ['-a', appPath, entry.path]).catchError((_) {
+               if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Şununla açılamadı: ${entry.name}')));
+               return ProcessResult(0, 1, '', '');
+            });
+          }
         case 'quickLook':
           showDialog(
             context: context,

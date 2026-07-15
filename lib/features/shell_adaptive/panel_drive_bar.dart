@@ -6,9 +6,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/storage/models/connection_profile.dart';
 import '../../core/storage/storage_provider_service.dart';
+import '../../core/settings/recent_service.dart';
 import '../connections/connection_repository.dart';
 import '../file_operations/file_operations_state.dart';
+import '../file_operations/file_open_service.dart';
 import 'panel_controller.dart';
+import '../../widgets/cascade_menu/cascade_menu.dart';
 
 /// A bar showing available local drives/mounts and active cloud/network connections.
 class PanelDriveBar extends ConsumerStatefulWidget {
@@ -187,11 +190,14 @@ class _PanelDriveBarState extends ConsumerState<PanelDriveBar> {
           bottom: BorderSide(color: theme.dividerColor.withValues(alpha: 0.4)),
         ),
       ),
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: allItems.length,
-        itemBuilder: (context, index) {
-          final item = allItems[index];
+      child: Row(
+        children: [
+          Expanded(
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: allItems.length,
+              itemBuilder: (context, index) {
+                final item = allItems[index];
           // Check if active
           final isSelected = item.id == currentProviderId && 
              (item.isLocal ? currentPath.startsWith(item.path) : true);
@@ -199,8 +205,14 @@ class _PanelDriveBarState extends ConsumerState<PanelDriveBar> {
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 1.5),
             child: Material(
-              color: isSelected ? theme.colorScheme.primaryContainer.withValues(alpha: 0.75) : Colors.transparent,
-              borderRadius: BorderRadius.circular(5),
+              color: isSelected ? theme.colorScheme.primaryContainer.withValues(alpha: 0.4) : Colors.transparent,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(5),
+                side: BorderSide(
+                  color: isSelected ? theme.colorScheme.primary : Colors.transparent,
+                  width: 1.5,
+                ),
+              ),
               clipBehavior: Clip.antiAlias,
               child: InkWell(
                 onTap: () async {
@@ -264,7 +276,71 @@ class _PanelDriveBarState extends ConsumerState<PanelDriveBar> {
           );
         },
       ),
+          ),
+          // Recents Button
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2.0),
+            child: Builder(
+              builder: (context) {
+                return IconButton(
+                  icon: const Icon(Icons.history, size: 16),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  splashRadius: 12,
+                  onPressed: () => _showRecentsMenu(context, theme),
+                  tooltip: 'Son Kullanılanlar',
+                );
+              }
+            ),
+          ),
+        ],
+      ),
     );
+  }
+
+  void _showRecentsMenu(BuildContext context, ThemeData theme) {
+    final recentState = ref.read(recentServiceProvider);
+    
+    final items = <CascadeMenuItem>[
+      CascadeMenuItem(
+        value: 'header_folders',
+        label: 'Son Klasörler',
+        icon: Icons.folder,
+        children: recentState.recentFolders.map((path) => CascadeMenuItem(
+          value: 'folder_$path',
+          label: path.split('/').last.isEmpty ? path : path.split('/').last,
+          icon: Icons.folder_open,
+        )).toList(),
+      ),
+      CascadeMenuItem(
+        value: 'header_files',
+        label: 'Son Dosyalar',
+        icon: Icons.insert_drive_file,
+        children: recentState.recentFiles.map((path) => CascadeMenuItem(
+          value: 'file_$path',
+          label: path.split('/').last,
+          icon: Icons.file_present,
+        )).toList(),
+      ),
+    ];
+
+    final RenderBox button = context.findRenderObject() as RenderBox;
+    final position = button.localToGlobal(Offset(0, button.size.height));
+
+    showCascadeMenu(
+      context: context,
+      position: position,
+      items: items,
+    ).then((value) {
+      if (value == null) return;
+      if (value.startsWith('folder_')) {
+        final path = value.substring('folder_'.length);
+        ref.read(panelControllerProvider.notifier).navigate(widget.side, path, providerId: 'local');
+      } else if (value.startsWith('file_')) {
+        final path = value.substring('file_'.length);
+        ref.read(fileOpenServiceProvider.notifier).openWithDefault(path);
+      }
+    });
   }
 
   IconData _getIconForType(ConnectionType type) {

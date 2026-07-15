@@ -6,7 +6,7 @@ part of 'archive_service.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$archiveServiceHash() => r'cfcfccd4e54022e6a913a1cdebaff5af3664bf73';
+String _$archiveServiceHash() => r'e7842c6cee42203e1928d72c33b3dded66767396';
 
 /// Service for compressing and extracting archives.
 ///

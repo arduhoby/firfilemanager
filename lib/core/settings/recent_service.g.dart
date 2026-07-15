@@ -1,33 +1,28 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of 'file_open_service.dart';
+part of 'recent_service.dart';
 
 // **************************************************************************
 // RiverpodGenerator
 // **************************************************************************
 
-String _$fileOpenServiceHash() => r'1c72d260d2d1e97d30193bd843fc1518f91fad22';
+String _$recentServiceHash() => r'60f8c2e47eb66ee457ada000ebf7442a31991bad';
 
-/// Service for opening files with the system default application.
+/// Service to manage recent apps, folders, and files.
 ///
-/// Uses platform-specific commands:
-/// - macOS: `open`
-/// - Windows: `start`
-/// - Linux: `xdg-open`
-///
-/// Copied from [FileOpenService].
-@ProviderFor(FileOpenService)
-final fileOpenServiceProvider =
-    NotifierProvider<FileOpenService, void>.internal(
-      FileOpenService.new,
-      name: r'fileOpenServiceProvider',
+/// Copied from [RecentService].
+@ProviderFor(RecentService)
+final recentServiceProvider =
+    NotifierProvider<RecentService, RecentState>.internal(
+      RecentService.new,
+      name: r'recentServiceProvider',
       debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
           ? null
-          : _$fileOpenServiceHash,
+          : _$recentServiceHash,
       dependencies: null,
       allTransitiveDependencies: null,
     );
 
-typedef _$FileOpenService = Notifier<void>;
+typedef _$RecentService = Notifier<RecentState>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package
