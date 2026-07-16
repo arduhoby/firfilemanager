@@ -82,12 +82,12 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
       if (previous?.state != TransferState.completed && next?.state == TransferState.completed) {
         if (ref.read(settingsProvider).playAnimationSounds) {
           final player1 = audioplayers.AudioPlayer();
-          player1.play(audioplayers.AssetSource('sounds/copy.wav'));
+          player1.play(audioplayers.AssetSource('sounds/success.wav'));
           player1.onPlayerComplete.listen((_) => player1.dispose());
 
-          Future.delayed(const Duration(milliseconds: 180), () {
+          Future.delayed(const Duration(milliseconds: 200), () {
             final player2 = audioplayers.AudioPlayer();
-            player2.play(audioplayers.AssetSource('sounds/copy.wav'));
+            player2.play(audioplayers.AssetSource('sounds/success.wav'));
             player2.onPlayerComplete.listen((_) => player2.dispose());
           });
         }
