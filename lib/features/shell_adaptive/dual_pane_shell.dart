@@ -81,11 +81,14 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
     ref.listen<TransferProgress?>(operationProgressProvider, (previous, next) {
       if (previous?.state != TransferState.completed && next?.state == TransferState.completed) {
         if (ref.read(settingsProvider).playAnimationSounds) {
-          final player = audioplayers.AudioPlayer();
-          player.play(audioplayers.AssetSource('sounds/copy.wav')).then((_) {
-            Future.delayed(const Duration(milliseconds: 150), () {
-              player.play(audioplayers.AssetSource('sounds/copy.wav'));
-            });
+          final player1 = audioplayers.AudioPlayer();
+          player1.play(audioplayers.AssetSource('sounds/copy.wav'));
+          player1.onPlayerComplete.listen((_) => player1.dispose());
+
+          Future.delayed(const Duration(milliseconds: 180), () {
+            final player2 = audioplayers.AudioPlayer();
+            player2.play(audioplayers.AssetSource('sounds/copy.wav'));
+            player2.onPlayerComplete.listen((_) => player2.dispose());
           });
         }
       }
