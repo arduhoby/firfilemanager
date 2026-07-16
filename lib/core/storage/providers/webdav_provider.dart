@@ -351,7 +351,7 @@ class WebdavProvider implements StorageProvider {
   Future<String> get homePath async => profile.defaultPath;
 
   @override
-  Future<int?> getFreeSpace(String path) async => null;
+  Future<DiskSpaceInfo?> getDiskSpaceInfo(String path) async => null;
 
   @override
   String normalizePath(String path) => p.normalize(path);

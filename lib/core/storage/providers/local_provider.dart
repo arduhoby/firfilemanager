@@ -275,6 +275,7 @@ class LocalProvider implements StorageProvider {
 
       final totalBytes = sourceFile.lengthSync();
       var bytesTransferred = 0;
+      var lastYieldedBytes = 0;
 
       yield TransferProgress(
         operation: TransferOperation.copy,
@@ -284,15 +285,15 @@ class LocalProvider implements StorageProvider {
       );
 
       // Use stream-based copy for progress
-      final sourceRaf = sourceFile.openSync();
-      final destRaf = destFile.openSync(mode: FileMode.write);
+      final sourceRaf = await sourceFile.open();
+      final destRaf = await destFile.open(mode: FileMode.write);
       try {
         const chunkSize = 64 * 1024;
         while (bytesTransferred < totalBytes) {
           if (cancelToken?.isCancelled ?? false) {
-            destRaf.closeSync();
-            sourceRaf.closeSync();
-            if (destFile.existsSync()) destFile.deleteSync();
+            await destRaf.close();
+            await sourceRaf.close();
+            if (await destFile.exists()) await destFile.delete();
             yield TransferProgress(
               operation: TransferOperation.copy,
               state: TransferState.cancelled,
@@ -302,20 +303,26 @@ class LocalProvider implements StorageProvider {
 
           final remaining = totalBytes - bytesTransferred;
           final readSize = remaining < chunkSize ? remaining : chunkSize;
-          final data = sourceRaf.readSync(readSize);
-          destRaf.writeFromSync(data);
+          final data = await sourceRaf.read(readSize);
+          await destRaf.writeFrom(data);
           bytesTransferred += data.length;
 
-          yield TransferProgress(
-            operation: TransferOperation.copy,
-            state: TransferState.inProgress,
-            bytesTransferred: bytesTransferred,
-            totalBytes: totalBytes,
-          );
+          // Throttle progress updates to avoid flooding UI (update every ~1%)
+          if (bytesTransferred == totalBytes || (bytesTransferred - lastYieldedBytes) > (totalBytes / 100).clamp(1024 * 1024, 50 * 1024 * 1024)) {
+            lastYieldedBytes = bytesTransferred;
+            yield TransferProgress(
+              operation: TransferOperation.copy,
+              state: TransferState.inProgress,
+              bytesTransferred: bytesTransferred,
+              totalBytes: totalBytes,
+            );
+            // Add a tiny delay to ensure UI thread gets time to render
+            await Future.delayed(const Duration(milliseconds: 1));
+          }
         }
 
-        destRaf.closeSync();
-        sourceRaf.closeSync();
+        await destRaf.close();
+        await sourceRaf.close();
 
         yield TransferProgress(
           operation: TransferOperation.copy,
@@ -324,8 +331,8 @@ class LocalProvider implements StorageProvider {
           totalBytes: totalBytes,
         );
       } catch (e) {
-        destRaf.closeSync();
-        sourceRaf.closeSync();
+        await destRaf.close();
+        await sourceRaf.close();
         yield TransferProgress(
           operation: TransferOperation.copy,
           state: TransferState.failed,
@@ -437,15 +444,15 @@ class LocalProvider implements StorageProvider {
 
     // Ensure dest directory exists
     final destDir = Directory(p.dirname(destPath));
-    if (!destDir.existsSync()) {
-      destDir.createSync(recursive: true);
+    if (!(await destDir.exists())) {
+      await destDir.create(recursive: true);
     }
 
     try {
       if (source == FileSystemEntityType.directory) {
-        Directory(sourcePath).renameSync(destPath);
+        await Directory(sourcePath).rename(destPath);
       } else {
-        File(sourcePath).renameSync(destPath);
+        await File(sourcePath).rename(destPath);
       }
     } catch (e) {
       throw StorageException(
@@ -563,9 +570,31 @@ class LocalProvider implements StorageProvider {
   }
 
   @override
-  Future<int?> getFreeSpace(String path) async {
-    // dart:io doesn't directly expose free space
-    // This would need platform channels for accurate values
+  Future<DiskSpaceInfo?> getDiskSpaceInfo(String path) async {
+    try {
+      if (Platform.isMacOS || Platform.isLinux) {
+        final res = await Process.run('df', ['-k', path]);
+        if (res.exitCode == 0) {
+          final lines = res.stdout.toString().trim().split('\n');
+          if (lines.length >= 2) {
+            final parts = lines[1].trim().split(RegExp(r'\s+'));
+            if (parts.length >= 4) {
+              final totalKb = int.tryParse(parts[1]) ?? 0;
+              final usedKb = int.tryParse(parts[2]) ?? 0;
+              final freeKb = int.tryParse(parts[3]) ?? 0;
+              
+              if (totalKb > 0) {
+                return DiskSpaceInfo(
+                  totalBytes: totalKb * 1024,
+                  freeBytes: freeKb * 1024,
+                  usedBytes: usedKb * 1024,
+                );
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {}
     return null;
   }
 

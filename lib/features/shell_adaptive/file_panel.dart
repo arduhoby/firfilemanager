@@ -338,6 +338,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
         CascadeMenuItem(value: 'revealBg', label: l10n.actionRevealInFinder, icon: Icons.search),
         const CascadeMenuItem(value: 'copyBgPath', label: 'Copy Path', icon: Icons.copy_all),
         const CascadeMenuItem.divider(),
+        CascadeMenuItem(value: 'equalPath', label: 'Diğer Paneli Eşitle (=)', icon: Icons.drag_handle),
         CascadeMenuItem(value: 'selectAll', label: l10n.actionSelectAll, icon: Icons.select_all),
         CascadeMenuItem(value: 'refresh', label: l10n.actionRefresh, icon: Icons.refresh),
       ];
@@ -365,6 +366,13 @@ class _FilePanelState extends ConsumerState<FilePanel> {
           case 'copyBgPath':
             Clipboard.setData(ClipboardData(text: _panelState.activeTab.currentPath));
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Path copied to clipboard')));
+          case 'equalPath':
+            final otherSide = widget.side == PanelSide.a ? PanelSide.b : PanelSide.a;
+            ref.read(panelControllerProvider.notifier).navigate(
+                  otherSide,
+                  _panelState.activeTab.currentPath,
+                  providerId: _panelState.activeTab.providerId,
+                );
           case 'selectAll':
             if (widget.side == PanelSide.a) {
               ref.read(panelAProvider.notifier).selectAll();
@@ -822,6 +830,11 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                 color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
+          const Spacer(),
+          DiskSpaceIndicator(
+            providerId: state.activeTab.providerId,
+            path: state.activeTab.currentPath,
+          ),
         ],
       ),
     );

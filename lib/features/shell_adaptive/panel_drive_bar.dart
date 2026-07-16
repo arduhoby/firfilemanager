@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/storage/models/connection_profile.dart';
+import '../../core/storage/storage_provider.dart';
 import '../../core/storage/storage_provider_service.dart';
 import '../../core/settings/recent_service.dart';
 import '../connections/connection_repository.dart';
@@ -277,6 +278,8 @@ class _PanelDriveBarState extends ConsumerState<PanelDriveBar> {
         },
       ),
           ),
+          // Disk Space Indicator (also shown in status bar now, but kept here for now or we can remove it from here)
+          // Removing from here to avoid duplication. It will be moved to the status bar.
           // Recents Button
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 2.0),
@@ -390,4 +393,137 @@ class _DriveItem {
     this.color,
     required this.isLocal,
   });
+}
+
+class DiskSpaceIndicator extends ConsumerStatefulWidget {
+  final String providerId;
+  final String path;
+
+  const DiskSpaceIndicator({required this.providerId, required this.path});
+
+  @override
+  ConsumerState<DiskSpaceIndicator> createState() => _DiskSpaceIndicatorState();
+}
+
+class _DiskSpaceIndicatorState extends ConsumerState<DiskSpaceIndicator> {
+  DiskSpaceInfo? _info;
+  bool _isLoading = false;
+  String _lastPath = '';
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _fetchSpace();
+  }
+
+  @override
+  void didUpdateWidget(covariant DiskSpaceIndicator oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.providerId != widget.providerId || oldWidget.path != widget.path) {
+      _fetchSpace();
+    }
+  }
+
+  Future<void> _fetchSpace() async {
+    if (widget.providerId.isEmpty || widget.path.isEmpty) return;
+    if (_lastPath == widget.path && _info != null) return;
+    
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final registry = ref.read(storageProviderRegistryProvider);
+      final provider = widget.providerId == 'local' 
+          ? ref.read(localStorageProviderProvider)
+          : registry[widget.providerId];
+          
+      if (provider != null) {
+        final info = await provider.getDiskSpaceInfo(widget.path);
+        if (mounted) {
+          setState(() {
+            _info = info;
+            _lastPath = widget.path;
+            _isLoading = false;
+          });
+        }
+      } else {
+        if (mounted) setState(() => _isLoading = false);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  String _formatBytes(int bytes) {
+    if (bytes <= 0) return '0 B';
+    const suffixes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    var i = 0;
+    double size = bytes.toDouble();
+    while (size > 1024 && i < suffixes.length - 1) {
+      size /= 1024;
+      i++;
+    }
+    if (i == 0) return '${size.toInt()} ${suffixes[i]}';
+    return '${size.toStringAsFixed(1)} ${suffixes[i]}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 8.0),
+        child: SizedBox(
+          width: 12, 
+          height: 12, 
+          child: CircularProgressIndicator(strokeWidth: 2)
+        ),
+      );
+    }
+
+    if (_info == null) return const SizedBox.shrink();
+
+    final theme = Theme.of(context);
+    final percent = _info!.totalBytes > 0 ? (_info!.usedBytes / _info!.totalBytes).clamp(0.0, 1.0) : 0.0;
+    
+    Color progressColor = theme.colorScheme.primary;
+    if (percent > 0.9) {
+      progressColor = theme.colorScheme.error;
+    } else if (percent > 0.75) {
+      progressColor = Colors.orange;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+      child: Tooltip(
+        message: 'Kullanılan: ${_formatBytes(_info!.usedBytes)}\nToplam: ${_formatBytes(_info!.totalBytes)}',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 40,
+              height: 4,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(2),
+                child: LinearProgressIndicator(
+                  value: percent,
+                  backgroundColor: theme.colorScheme.onSurface.withOpacity(0.1),
+                  valueColor: AlwaysStoppedAnimation<Color>(progressColor),
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              '${_formatBytes(_info!.totalBytes)} / ${_formatBytes(_info!.freeBytes)} boş',
+              style: theme.textTheme.labelSmall?.copyWith(
+                fontSize: 9.5,
+                color: theme.colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

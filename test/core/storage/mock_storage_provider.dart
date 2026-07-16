@@ -325,8 +325,12 @@ class MockStorageProvider implements StorageProvider {
   Future<String> get homePath async => '/';
 
   @override
-  Future<int?> getFreeSpace(String path) async => 1024 * 1024 * 1024; // 1GB
-
+  Future<DiskSpaceInfo> getDiskSpaceInfo(String path) async {
+    return DiskSpaceInfo(
+      totalBytes: 2048 * 1024 * 1024,
+      freeBytes: 1024 * 1024 * 1024,
+    );
+  }
   @override
   String normalizePath(String path) {
     if (path.isEmpty) return '/';

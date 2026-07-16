@@ -2,6 +2,8 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:audioplayers/audioplayers.dart' as audioplayers;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/settings/settings_provider.dart';
@@ -75,6 +77,19 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
     final activeSide = ref.watch(activePanelProvider);
     final progress = ref.watch(operationProgressProvider);
     final clipboard = ref.watch(fileClipboardProvider);
+
+    ref.listen<TransferProgress?>(operationProgressProvider, (previous, next) {
+      if (previous?.state != TransferState.completed && next?.state == TransferState.completed) {
+        if (ref.read(settingsProvider).playAnimationSounds) {
+          final player = audioplayers.AudioPlayer();
+          player.play(audioplayers.AssetSource('sounds/copy.wav')).then((_) {
+            Future.delayed(const Duration(milliseconds: 150), () {
+              player.play(audioplayers.AssetSource('sounds/copy.wav'));
+            });
+          });
+        }
+      }
+    });
 
     // The FlyingFileAnimation is now triggered directly inside FileOperationsActions.
 
@@ -710,7 +725,9 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
                             height: 24,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: theme.colorScheme.primary,
+                              color: (progress.operation == TransferOperation.zip || progress.operation == TransferOperation.unzip)
+                                  ? Colors.orange
+                                  : theme.colorScheme.primary,
                             ),
                           ),
                           Icon(
@@ -718,9 +735,15 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
                                 ? Icons.copy 
                                 : progress.operation == TransferOperation.move 
                                     ? Icons.drive_file_move 
-                                    : Icons.sync,
+                                    : progress.operation == TransferOperation.zip
+                                        ? Icons.folder_zip_outlined
+                                        : progress.operation == TransferOperation.unzip
+                                            ? Icons.unarchive_outlined
+                                            : Icons.sync,
                             size: 12,
-                            color: theme.colorScheme.primary,
+                            color: (progress.operation == TransferOperation.zip || progress.operation == TransferOperation.unzip)
+                                ? Colors.orange
+                                : theme.colorScheme.primary,
                           ),
                         ],
                       )
@@ -748,11 +771,17 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
                               TransferOperation.copy => l10n.operationCopying(progress.totalFiles),
                               TransferOperation.move => l10n.operationMoving(progress.totalFiles),
                               TransferOperation.delete => l10n.operationDeleting(progress.totalFiles),
-                              TransferOperation.read => 'Reading...',
-                              TransferOperation.write => 'Writing...',
+                              TransferOperation.zip => '${progress.filesTransferred}/${progress.totalFiles} öğe sıkıştırılıyor...',
+                              TransferOperation.unzip => '${progress.filesTransferred} öğe arşivden çıkarılıyor...',
+                              TransferOperation.sync => 'Senkronize ediliyor...',
+                              TransferOperation.read => 'Okunuyor...',
+                              TransferOperation.write => 'Yazılıyor...',
                             },
                             style: theme.textTheme.titleSmall?.copyWith(
                               fontWeight: FontWeight.bold,
+                              color: (progress.operation == TransferOperation.zip || progress.operation == TransferOperation.unzip)
+                                  ? Colors.orange
+                                  : null,
                             ),
                           ),
                           const SizedBox(height: 2),

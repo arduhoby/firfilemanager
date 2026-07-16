@@ -506,7 +506,7 @@ class SftpProvider implements StorageProvider {
   }
 
   @override
-  Future<int?> getFreeSpace(String path) async => null;
+  Future<DiskSpaceInfo?> getDiskSpaceInfo(String path) async => null;
 
   @override
   String normalizePath(String path) => p.normalize(path);

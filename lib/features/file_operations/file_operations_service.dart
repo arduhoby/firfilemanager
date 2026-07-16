@@ -32,6 +32,7 @@ class FileOperationsService extends _$FileOperationsService {
     required List<FileEntry> entries,
     required StorageProvider destProvider,
     required String destPath,
+    bool isMove = false,
   }) async {
     if (entries.isEmpty) return;
 
@@ -60,7 +61,7 @@ class FileOperationsService extends _$FileOperationsService {
         counter++;
       }
       progress.setProgress(TransferProgress(
-        operation: TransferOperation.copy,
+        operation: isMove ? TransferOperation.move : TransferOperation.copy,
         state: TransferState.inProgress,
         currentFile: entry,
         filesTransferred: i,
@@ -77,6 +78,7 @@ class FileOperationsService extends _$FileOperationsService {
 
       await for (final p in stream) {
         progress.setProgress(p.copyWith(
+          operation: isMove ? TransferOperation.move : TransferOperation.copy,
           filesTransferred: i,
           totalFiles: entries.length,
         ));
@@ -90,7 +92,7 @@ class FileOperationsService extends _$FileOperationsService {
         } catch (_) {}
 
         progress.setProgress(TransferProgress(
-          operation: TransferOperation.copy,
+          operation: isMove ? TransferOperation.move : TransferOperation.copy,
           state: TransferState.failed,
           error: e.toString(),
           currentFile: entry,
@@ -100,7 +102,7 @@ class FileOperationsService extends _$FileOperationsService {
     }
 
     progress.setProgress(TransferProgress(
-      operation: TransferOperation.copy,
+      operation: isMove ? TransferOperation.move : TransferOperation.copy,
       state: cancelToken.isCancelled
           ? TransferState.cancelled
           : TransferState.completed,
@@ -111,48 +113,64 @@ class FileOperationsService extends _$FileOperationsService {
     _activeTokens.remove(cancelToken);
   }
 
-  /// Move entries within the same provider
+  /// Move entries
   Future<void> move({
-    required StorageProvider provider,
+    required StorageProvider sourceProvider,
     required List<FileEntry> entries,
+    required StorageProvider destProvider,
     required String destPath,
   }) async {
     if (entries.isEmpty) return;
 
-    final progress = ref.read(operationProgressProvider.notifier);
+    if (sourceProvider == destProvider) {
+      final progress = ref.read(operationProgressProvider.notifier);
+      bool useFallback = false;
 
-    for (var i = 0; i < entries.length; i++) {
-      final entry = entries[i];
-      final destEntryPath = provider.joinPath(destPath, entry.name);
+      for (var i = 0; i < entries.length; i++) {
+        final entry = entries[i];
+        final destEntryPath = sourceProvider.joinPath(destPath, entry.name);
 
-      progress.setProgress(TransferProgress(
-        operation: TransferOperation.move,
-        state: TransferState.inProgress,
-        currentFile: entry,
-        filesTransferred: i,
-        totalFiles: entries.length,
-      ));
-
-      try {
-        await provider.move(entry.path, destEntryPath);
-      } catch (e) {
         progress.setProgress(TransferProgress(
           operation: TransferOperation.move,
-          state: TransferState.failed,
-          error: e.toString(),
+          state: TransferState.inProgress,
           currentFile: entry,
+          filesTransferred: i,
+          totalFiles: entries.length,
         ));
-        // delete() ve rename() gibi hatayı fırlat ki UI tarafı haberdar olsun
-        throw Exception('Taşıma hatası: $e');
+
+        try {
+          await sourceProvider.move(entry.path, destEntryPath);
+        } catch (e) {
+          useFallback = true;
+          break;
+        }
+      }
+
+      if (!useFallback) {
+        progress.setProgress(TransferProgress(
+          operation: TransferOperation.move,
+          state: TransferState.completed,
+          filesTransferred: entries.length,
+          totalFiles: entries.length,
+        ));
+        return;
       }
     }
 
-    progress.setProgress(TransferProgress(
-      operation: TransferOperation.move,
-      state: TransferState.completed,
-      filesTransferred: entries.length,
-      totalFiles: entries.length,
-    ));
+    // Fallback cross-provider or cross-device
+    await copy(
+      sourceProvider: sourceProvider,
+      entries: entries,
+      destProvider: destProvider,
+      destPath: destPath,
+      isMove: true,
+    );
+
+    // Delete sources after successful move copy
+    final currentProgress = ref.read(operationProgressProvider);
+    if (currentProgress?.state != TransferState.failed && currentProgress?.state != TransferState.cancelled) {
+      await delete(provider: sourceProvider, entries: entries, hideProgress: true);
+    }
   }
 
   /// Synchronize source directory to destination directory
@@ -167,7 +185,7 @@ class FileOperationsService extends _$FileOperationsService {
     final progress = ref.read(operationProgressProvider.notifier);
 
     progress.setProgress(TransferProgress(
-      operation: TransferOperation.copy,
+      operation: TransferOperation.sync,
       state: TransferState.inProgress,
       currentFile: FileEntry(
         name: 'Scanning...',
@@ -192,7 +210,7 @@ class FileOperationsService extends _$FileOperationsService {
             scannedCount++;
             if (scannedCount % 50 == 0) {
               progress.setProgress(TransferProgress(
-                operation: TransferOperation.copy,
+                operation: TransferOperation.sync,
                 state: TransferState.inProgress,
                 currentFile: FileEntry(
                   name: 'Scanning: $scannedCount files... (${filesToSync.length} changes found)',
@@ -232,7 +250,7 @@ class FileOperationsService extends _$FileOperationsService {
         } catch (e) {
           // İzin hatalarını yutuyoruz ama ilerlemede belirtiyoruz
           progress.setProgress(TransferProgress(
-            operation: TransferOperation.copy,
+            operation: TransferOperation.sync,
             state: TransferState.inProgress,
             currentFile: FileEntry(
               name: 'Uyarı: Klasör okunamadı — ${e.toString().split('\n').first}',
@@ -250,7 +268,7 @@ class FileOperationsService extends _$FileOperationsService {
 
       if (cancelToken.isCancelled) {
         progress.setProgress(TransferProgress(
-          operation: TransferOperation.copy,
+          operation: TransferOperation.sync,
           state: TransferState.cancelled,
         ));
         _activeTokens.remove(cancelToken);
@@ -275,7 +293,7 @@ class FileOperationsService extends _$FileOperationsService {
         }
 
         progress.setProgress(TransferProgress(
-          operation: TransferOperation.copy,
+          operation: TransferOperation.sync,
           state: TransferState.inProgress,
           currentFile: entry,
           filesTransferred: i,
@@ -293,6 +311,7 @@ class FileOperationsService extends _$FileOperationsService {
 
           await for (final p in stream) {
             progress.setProgress(p.copyWith(
+              operation: TransferOperation.sync,
               filesTransferred: i,
               totalFiles: filesToSync.length,
             ));
@@ -306,7 +325,7 @@ class FileOperationsService extends _$FileOperationsService {
           } catch (_) {}
           
           progress.setProgress(TransferProgress(
-            operation: TransferOperation.copy,
+            operation: TransferOperation.sync,
             state: TransferState.failed,
             error: e.toString(),
             currentFile: entry,
@@ -315,7 +334,7 @@ class FileOperationsService extends _$FileOperationsService {
       }
 
       progress.setProgress(TransferProgress(
-        operation: TransferOperation.copy,
+        operation: TransferOperation.sync,
         state: cancelToken.isCancelled
             ? TransferState.cancelled
             : TransferState.completed,
@@ -324,7 +343,7 @@ class FileOperationsService extends _$FileOperationsService {
       ));
     } catch (e) {
       progress.setProgress(TransferProgress(
-        operation: TransferOperation.copy,
+        operation: TransferOperation.sync,
         state: TransferState.failed,
         error: e.toString(),
       ));
@@ -337,6 +356,7 @@ class FileOperationsService extends _$FileOperationsService {
   Future<void> delete({
     required StorageProvider provider,
     required List<FileEntry> entries,
+    bool hideProgress = false,
   }) async {
     if (entries.isEmpty) return;
 
@@ -345,34 +365,39 @@ class FileOperationsService extends _$FileOperationsService {
     for (var i = 0; i < entries.length; i++) {
       final entry = entries[i];
 
-      progress.setProgress(TransferProgress(
-        operation: TransferOperation.delete,
-        state: TransferState.inProgress,
-        currentFile: entry,
-        filesTransferred: i,
-        totalFiles: entries.length,
-      ));
+      if (!hideProgress) {
+        progress.setProgress(TransferProgress(
+          operation: TransferOperation.delete,
+          state: TransferState.inProgress,
+          currentFile: entry,
+          filesTransferred: i,
+          totalFiles: entries.length,
+        ));
+      }
 
       try {
         await provider.delete(entry.path);
       } catch (e) {
-        progress.setProgress(TransferProgress(
-          operation: TransferOperation.delete,
-          state: TransferState.failed,
-          error: e.toString(),
-          currentFile: entry,
-        ));
-        // Hatayı yutma, fırlat ki UI tarafı SnackBar gösterebilsin
+        if (!hideProgress) {
+          progress.setProgress(TransferProgress(
+            operation: TransferOperation.delete,
+            state: TransferState.failed,
+            error: e.toString(),
+            currentFile: entry,
+          ));
+        }
         throw Exception('Silme hatası: $e');
       }
     }
 
-    progress.setProgress(TransferProgress(
-      operation: TransferOperation.delete,
-      state: TransferState.completed,
-      filesTransferred: entries.length,
-      totalFiles: entries.length,
-    ));
+    if (!hideProgress) {
+      progress.setProgress(TransferProgress(
+        operation: TransferOperation.delete,
+        state: TransferState.completed,
+        filesTransferred: entries.length,
+        totalFiles: entries.length,
+      ));
+    }
   }
 
   /// Rename a single entry
@@ -470,8 +495,9 @@ class FileOperationsService extends _$FileOperationsService {
       // For move within same provider, use move
       if (sourceProvider == destProvider) {
         await move(
-          provider: destProvider,
+          sourceProvider: destProvider,
           entries: entries,
+          destProvider: destProvider,
           destPath: destPath,
         );
       } else {

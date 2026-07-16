@@ -45,6 +45,9 @@ enum TransferOperation {
   delete,
   read,
   write,
+  zip,
+  unzip,
+  sync,
 }
 
 /// State of a transfer operation

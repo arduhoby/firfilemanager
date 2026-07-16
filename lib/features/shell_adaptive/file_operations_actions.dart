@@ -493,27 +493,36 @@ class FileOperationsActions extends _$FileOperationsActions {
 
     if (destPath == null || destPath.isEmpty) return;
 
-    final provider = _getProviderForSide(sourceSide);
+    final sourceProvider = _getProviderForSide(sourceSide);
+    final destProvider = _getProviderForSide(destSide);
     final service = ref.read(fileOperationsServiceProvider.notifier);
 
     final entries = sourceState.activeTab.selectedEntries;
     _triggerAnimation(context, sourceSide, TransferOperation.move, entries.isNotEmpty && entries.first.isDirectory);
 
-    await service.move(
-      provider: provider,
-      entries: sourceState.activeTab.selectedEntries,
-      destPath: destPath,
-    );
+    try {
+      await service.move(
+        sourceProvider: sourceProvider,
+        entries: entries,
+        destProvider: destProvider,
+        destPath: destPath,
+      );
 
-    // Clear selection and refresh both panels
-    if (sourceSide == PanelSide.a) {
-      ref.read(panelAProvider.notifier).clearSelection();
-    } else {
-      ref.read(panelBProvider.notifier).clearSelection();
+      // Clear selection and refresh both panels
+      if (sourceSide == PanelSide.a) {
+        ref.read(panelAProvider.notifier).clearSelection();
+      } else {
+        ref.read(panelBProvider.notifier).clearSelection();
+      }
+
+      await ref.read(panelControllerProvider.notifier).refresh(sourceSide);
+      await ref.read(panelControllerProvider.notifier).refresh(destSide);
+    } catch (e) {
+      ref.read(operationProgressProvider.notifier).clear();
+      if (context.mounted) {
+        _showErrorSnackBar(context, e.toString());
+      }
     }
-
-    await ref.read(panelControllerProvider.notifier).refresh(sourceSide);
-    await ref.read(panelControllerProvider.notifier).refresh(destSide);
   }
 
   Future<String?> _showTransferDialog(
@@ -804,19 +813,31 @@ class FileOperationsActions extends _$FileOperationsActions {
     if (result == null || result.isEmpty) return;
 
     final archiveService = ref.read(archiveServiceProvider.notifier);
+    final progressNotifier = ref.read(operationProgressProvider.notifier);
+
+    // Sıkıştırma başladığında tek bir kopyalama animasyonu göster
+    _triggerAnimation(context, side, TransferOperation.copy, entries.isNotEmpty && entries.first.isDirectory);
 
     try {
-      await archiveService.compress(
+      final progressStream = archiveService.compress(
         entries: entries,
         destDir: destPanelState.activeTab.currentPath,
         archiveName: result,
         format: format,
       );
+
+      await for (final progress in progressStream) {
+        progressNotifier.setProgress(progress);
+      }
+
+      progressNotifier.clear();
+
       // Refresh the destination panel
       await ref.read(panelControllerProvider.notifier).refresh(
         side == PanelSide.a ? PanelSide.b : PanelSide.a,
       );
     } catch (e) {
+      ref.read(operationProgressProvider.notifier).clear();
       if (context.mounted) {
         _showErrorSnackBar(context, e.toString());
       }
@@ -1033,7 +1054,7 @@ class FileOperationsActions extends _$FileOperationsActions {
 
       Stream<TransferProgress> progressStream;
       if (isEncrypted && password != null) {
-        progressStream = archiveService.extractWithPassword(
+        progressStream = archiveService.extract(
           archivePath: entry.path,
           destDir: destPanelState.activeTab.currentPath,
           password: password,

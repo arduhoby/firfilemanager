@@ -4,6 +4,19 @@ import 'models/connection_profile.dart';
 import 'models/file_entry.dart';
 import 'models/transfer_progress.dart';
 
+/// Information about disk space usage
+class DiskSpaceInfo {
+  final int totalBytes;
+  final int freeBytes;
+  final int usedBytes;
+
+  const DiskSpaceInfo({
+    required this.totalBytes,
+    required this.freeBytes,
+    required this.usedBytes,
+  });
+}
+
 /// Exception thrown by storage providers for operation errors.
 class StorageException implements Exception {
   StorageException(this.message, {this.code, this.path, this.cause});
@@ -176,10 +189,10 @@ abstract interface class StorageProvider {
   /// For remote providers, this is the default path from the profile.
   Future<String> get homePath;
 
-  /// Get available free space at the given path
+  /// Get total, free and used space at the given path
   ///
   /// Returns null if the provider doesn't support this.
-  Future<int?> getFreeSpace(String path);
+  Future<DiskSpaceInfo?> getDiskSpaceInfo(String path);
 
   /// Normalize a path for this provider
   ///

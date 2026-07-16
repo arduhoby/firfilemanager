@@ -256,7 +256,7 @@ class GoogleDriveProvider implements StorageProvider {
   }
 
   @override
-  Future<int?> getFreeSpace(String path) async => null;
+  Future<DiskSpaceInfo?> getDiskSpaceInfo(String path) async => null;
   
   @override
   Future<String> get homePath async => 'root';
