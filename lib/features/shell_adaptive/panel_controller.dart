@@ -73,7 +73,8 @@ class PanelController extends _$PanelController {
       }
 
       // Add to recent folders if it's local
-      if (provider.displayName == 'Local' && !path.startsWith(Platform.environment['HOME']! + '/Library/')) {
+      final home = Platform.environment['HOME'];
+      if (provider.displayName == 'Local' && (home == null || !path.startsWith('$home/Library/'))) {
         ref.read(recentServiceProvider.notifier).addRecentFolder(path);
       }
 
@@ -134,15 +135,30 @@ class PanelController extends _$PanelController {
 
   /// Navigate a panel to a new path
   Future<void> navigate(PanelSide side, String path, {String? providerId}) async {
+    String? resolvedProviderId = providerId;
+    
+    // Auto-detect local paths if providerId is not specified
+    if (resolvedProviderId == null) {
+      bool isLocal = false;
+      if (Platform.isWindows) {
+        isLocal = RegExp(r'^[a-zA-Z]:[/\\]').hasMatch(path) || path == '/';
+      } else {
+        isLocal = path.startsWith('/Users/') || path.startsWith('/home/') || path.startsWith('/tmp/') || Directory(path).existsSync() || path == '/';
+      }
+      if (isLocal) {
+        resolvedProviderId = 'local';
+      }
+    }
+
     if (side == PanelSide.a) {
-      if (providerId != null) {
-        ref.read(panelAProvider.notifier).setProviderAndPath(providerId, path);
+      if (resolvedProviderId != null) {
+        ref.read(panelAProvider.notifier).setProviderAndPath(resolvedProviderId, path);
       } else {
         ref.read(panelAProvider.notifier).setPath(path);
       }
     } else {
-      if (providerId != null) {
-        ref.read(panelBProvider.notifier).setProviderAndPath(providerId, path);
+      if (resolvedProviderId != null) {
+        ref.read(panelBProvider.notifier).setProviderAndPath(resolvedProviderId, path);
       } else {
         ref.read(panelBProvider.notifier).setPath(path);
       }

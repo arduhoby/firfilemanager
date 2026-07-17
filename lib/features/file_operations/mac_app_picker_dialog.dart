@@ -38,10 +38,10 @@ class _MacAppPickerDialogState extends State<MacAppPickerDialog> {
           final trimmed = l.trim();
           if (trimmed.isEmpty || !trimmed.endsWith('.app')) return false;
           
-          // Only include standard application directories
+          final home = Platform.environment['HOME'];
           if (!trimmed.startsWith('/Applications/') && 
               !trimmed.startsWith('/System/Applications/') &&
-              !trimmed.startsWith(Platform.environment['HOME']! + '/Applications/')) {
+              (home == null || !trimmed.startsWith('$home/Applications/'))) {
             return false;
           }
           

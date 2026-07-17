@@ -394,7 +394,7 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
         icon: Icons.computer_outlined,
         color: theme.colorScheme.primary,
         onTap: () {
-          ref.read(panelControllerProvider.notifier).navigate(activeSide, '/');
+          ref.read(panelControllerProvider.notifier).navigate(activeSide, '/', providerId: 'local');
         },
       ),
     );

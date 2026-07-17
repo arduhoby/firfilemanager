@@ -59,8 +59,8 @@ class GoogleDriveProvider implements StorageProvider {
         final effectiveClientId = clientId ?? Env.googleDriveClientId;
         final effectiveClientSecret = clientSecret ?? Env.googleDriveClientSecret;
 
-        if (effectiveClientId.isEmpty || effectiveClientSecret.isEmpty) {
-          throw Exception('Google Drive Client ID and Secret must be provided.');
+        if (effectiveClientId.isEmpty) {
+          throw Exception('Google Drive Client ID must be provided.');
         }
 
         final id = ClientId(effectiveClientId, effectiveClientSecret);
@@ -216,7 +216,125 @@ class GoogleDriveProvider implements StorageProvider {
     CancelToken? cancelToken,
   }) async* {
     _checkConnection();
-    throw UnimplementedError();
+    
+    try {
+      final sourceEntry = await stat(sourcePath);
+      final totalBytes = sourceEntry.size;
+      var bytesTransferred = 0;
+
+      if (sourceEntry.isDirectory) {
+        yield* _copyDirectory(sourcePath, destProvider, destPath, options, cancelToken);
+      } else {
+        // If same provider, use native Google Drive copy
+        if (destProvider is GoogleDriveProvider && destProvider.profile.id == profile.id) {
+          yield TransferProgress(
+            operation: TransferOperation.copy,
+            state: TransferState.inProgress,
+            bytesTransferred: 0,
+            totalBytes: totalBytes,
+          );
+          
+          final file = drive.File();
+          final parentId = destProvider._resolveId(destProvider.dirname(destPath));
+          file.parents = [parentId];
+          file.name = destProvider.basename(destPath);
+          
+          await _api!.files.copy(file, sourcePath);
+          
+          yield TransferProgress(
+            operation: TransferOperation.copy,
+            state: TransferState.completed,
+            bytesTransferred: totalBytes,
+            totalBytes: totalBytes,
+          );
+          return;
+        }
+
+        // Cross-provider copy:
+        final id = _resolveId(sourcePath);
+        final media = await _api!.files.get(id, downloadOptions: drive.DownloadOptions.fullMedia) as drive.Media;
+        
+        final controller = StreamController<List<int>>();
+        
+        media.stream.listen(
+          (chunk) {
+            bytesTransferred += chunk.length;
+            controller.add(chunk);
+          },
+          onDone: () => controller.close(),
+          onError: (Object e) => controller.addError(e),
+          cancelOnError: true,
+        );
+
+        await for (final progress in destProvider.write(destPath, controller.stream, cancelToken: cancelToken)) {
+          if (progress.state == TransferState.inProgress) {
+            yield progress.copyWith(
+              operation: TransferOperation.copy,
+              bytesTransferred: bytesTransferred,
+              totalBytes: totalBytes,
+            );
+          } else {
+            yield progress.copyWith(operation: TransferOperation.copy);
+          }
+        }
+      }
+    } catch (e) {
+      yield TransferProgress(
+        operation: TransferOperation.copy,
+        state: TransferState.failed,
+        error: e.toString(),
+      );
+    }
+  }
+
+  Stream<TransferProgress> _copyDirectory(
+    String sourcePath,
+    StorageProvider destProvider,
+    String destPath,
+    CopyOptions options,
+    CancelToken? cancelToken,
+  ) async* {
+    final entries = await list(sourcePath);
+    var filesTransferred = 0;
+    final totalFiles = entries.length;
+
+    await destProvider.mkdir(destPath);
+
+    for (final entry in entries) {
+      if (cancelToken?.isCancelled ?? false) {
+        yield TransferProgress(
+          operation: TransferOperation.copy,
+          state: TransferState.cancelled,
+          filesTransferred: filesTransferred,
+          totalFiles: totalFiles,
+        );
+        return;
+      }
+
+      final srcEntry = joinPath(sourcePath, entry.name);
+      final destEntry = destProvider.joinPath(destPath, entry.name);
+
+      if (entry.isDirectory) {
+        yield* _copyDirectory(srcEntry, destProvider, destEntry, options, cancelToken);
+      } else {
+        yield* copy(srcEntry, destProvider, destEntry, options: options, cancelToken: cancelToken);
+      }
+
+      filesTransferred++;
+      yield TransferProgress(
+        operation: TransferOperation.copy,
+        state: TransferState.inProgress,
+        filesTransferred: filesTransferred,
+        totalFiles: totalFiles,
+      );
+    }
+
+    yield TransferProgress(
+      operation: TransferOperation.copy,
+      state: TransferState.completed,
+      filesTransferred: filesTransferred,
+      totalFiles: totalFiles,
+    );
   }
 
   @override

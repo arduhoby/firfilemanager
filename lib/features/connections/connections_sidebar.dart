@@ -233,7 +233,7 @@ class _ConnectionsSidebarState extends ConsumerState<ConnectionsSidebar>
             collapsed: collapsed,
             onTap: () {
               final activeSide = ref.read(activePanelProvider);
-              ref.read(panelControllerProvider.notifier).navigate(activeSide, '/');
+              ref.read(panelControllerProvider.notifier).navigate(activeSide, '/', providerId: 'local');
               context.go('/');
             },
           ),

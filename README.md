@@ -19,8 +19,9 @@ Fir File Manager is a modern, cross-platform dual-pane file manager built with F
 
 1. Ensure you have the [Flutter SDK](https://flutter.dev/docs/get-started/install) installed.
 2. Clone this repository.
-3. Run `flutter pub get` to install dependencies.
-4. Run `flutter run -d macos` (macOS recommended for optimal desktop experience).
+3. Copy `lib/env.dart.example` to `lib/env.dart`. You can add your API keys inside this file if needed.
+4. Run `flutter pub get` to install dependencies.
+5. Run `flutter run -d macos` (macOS recommended for optimal desktop experience).
 
 ---
 
@@ -43,5 +44,6 @@ Fir File Manager, Flutter ile geliştirilmiş modern, çok platformlu ve çift p
 
 1. [Flutter SDK](https://flutter.dev/docs/get-started/install) kurulumunu yapın.
 2. Projeyi bilgisayarınıza indirin (clone).
-3. Bağımlılıkları yüklemek için `flutter pub get` komutunu çalıştırın.
-4. `flutter run -d macos` komutu ile uygulamayı başlatın (En iyi masaüstü deneyimi için macOS önerilir).
+3. `lib/env.dart.example` dosyasının bir kopyasını oluşturup adını `lib/env.dart` yapın. Gerekirse Google Drive API anahtarlarınızı bu dosyaya yazabilirsiniz.
+4. Bağımlılıkları yüklemek için `flutter pub get` komutunu çalıştırın.
+5. `flutter run -d macos` komutu ile uygulamayı başlatın (En iyi masaüstü deneyimi için macOS önerilir).

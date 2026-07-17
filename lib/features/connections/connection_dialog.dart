@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -380,7 +381,7 @@ class _ConnectionDialogState extends ConsumerState<ConnectionDialog> {
                   maxLines: 4,
                 )
               else if (_selectedAuth == AuthMethod.oauth2) ...[
-                if (_selectedType != ConnectionType.gdrive) ...[
+                if (_selectedType != ConnectionType.gdrive || (!Platform.isAndroid && !Platform.isIOS)) ...[
                   TextField(
                     controller: _clientIdController,
                     decoration: const InputDecoration(

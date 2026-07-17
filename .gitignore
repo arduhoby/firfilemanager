@@ -46,3 +46,11 @@ app.*.map.json
 
 # Local env vars
 lib/env.dart
+
+# Temporary fix scripts, builds, and test files
+fix*.py
+update_state.py
+generate_sounds.py
+*.dmg
+*.zip
+test_enc.*
