@@ -326,9 +326,10 @@ class MockStorageProvider implements StorageProvider {
 
   @override
   Future<DiskSpaceInfo> getDiskSpaceInfo(String path) async {
-    return DiskSpaceInfo(
+    return const DiskSpaceInfo(
       totalBytes: 2048 * 1024 * 1024,
       freeBytes: 1024 * 1024 * 1024,
+      usedBytes: 1024 * 1024 * 1024,
     );
   }
   @override
