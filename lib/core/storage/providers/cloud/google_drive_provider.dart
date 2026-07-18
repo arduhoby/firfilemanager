@@ -311,7 +311,7 @@ class GoogleDriveProvider implements StorageProvider {
         return;
       }
 
-      final srcEntry = joinPath(sourcePath, entry.name);
+      final srcEntry = entry.path;
       final destEntry = destProvider.joinPath(destPath, entry.name);
 
       if (entry.isDirectory) {
