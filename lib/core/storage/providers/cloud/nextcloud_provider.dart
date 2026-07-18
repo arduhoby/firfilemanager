@@ -36,33 +36,14 @@ class NextcloudProvider implements StorageProvider {
   @override
   Future<void> connect() async {
     try {
-      bool isHttps = true;
+      final protocol = profile.effectivePort == 443 ? 'https' : 'http';
       var host = profile.host ?? '';
-      if (host.startsWith('http://')) {
-        isHttps = false;
-        host = host.substring(7);
-      } else if (host.startsWith('https://')) {
-        isHttps = true;
-        host = host.substring(8);
-      } else {
-        isHttps = profile.effectivePort == 443;
-      }
-      final protocol = isHttps ? 'https' : 'http';
-      
+      if (host.startsWith('http://')) host = host.substring(7);
+      if (host.startsWith('https://')) host = host.substring(8);
       // Strip trailing slash if present
       final cleanHost = host.endsWith('/') ? host.substring(0, host.length - 1) : host;
       
-      // Parse host into domain and subpath (e.g. nextcloud.example.com/nextcloud)
-      String hostDomain = cleanHost;
-      String subPath = '';
-      final slashIndex = cleanHost.indexOf('/');
-      if (slashIndex != -1) {
-        hostDomain = cleanHost.substring(0, slashIndex);
-        subPath = cleanHost.substring(slashIndex);
-      }
-
-      final portSuffix = (profile.effectivePort == 80 || profile.effectivePort == 443) ? '' : ':${profile.effectivePort}';
-      final baseUrl = '$protocol://$hostDomain$portSuffix$subPath/remote.php/webdav';
+      final baseUrl = '$protocol://$cleanHost:${profile.effectivePort}/remote.php/webdav';
 
       if (profile.authMethod == AuthMethod.password) {
         if (password == null || password!.isEmpty) {

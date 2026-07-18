@@ -208,48 +208,61 @@ class FileOperationsActions extends _$FileOperationsActions {
     final provider = _getProviderForSide(side);
     final service = ref.read(fileOperationsServiceProvider.notifier);
 
-    // Check if any directory is NOT empty
-    bool hasNonEmptyDir = false;
-    for (final entry in entries) {
-      if (entry.isDirectory) {
-        try {
-          final children = await provider.list(entry.path, const ListOptions(showHidden: true));
-          if (children.isNotEmpty) {
-            hasNonEmptyDir = true;
-            break;
-          }
-        } catch (e) {
-          // If we can't read it, assume it's non-empty to be safe
-          hasNonEmptyDir = true;
-          break;
-        }
-      }
-    }
-
-    if (hasNonEmptyDir) {
-      if (!context.mounted) return;
-      final result = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text(l10n.confirmDeleteTitle),
-          content: Text('Seçili klasörlerden bazıları dolu. Kalıcı olarak silinecekler. Emin misiniz?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: Text(l10n.actionCancel),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.error,
+    bool wipeSelected = false;
+    if (!context.mounted) return;
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: Text(l10n.confirmDeleteTitle),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Seçili öğeleri silmek istediğinizden emin misiniz?'),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Checkbox(
+                        value: wipeSelected,
+                        onChanged: (val) {
+                          setState(() {
+                            wipeSelected = val ?? false;
+                          });
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'Kalıcı sil (wipe - üzerine yazarak güvenli sil)',
+                          style: TextStyle(fontSize: 13),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              onPressed: () => Navigator.pop(context, true),
-              child: Text(l10n.actionDelete),
-            ),
-          ],
-        ),
-      );
-      if (result != true) return;
-    }
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: Text(l10n.actionCancel),
+                ),
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.error,
+                  ),
+                  onPressed: () => Navigator.pop(context, true),
+                  child: Text(l10n.actionDelete),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    if (result != true) return;
 
     try {
       if (!context.mounted) return;
@@ -257,6 +270,7 @@ class FileOperationsActions extends _$FileOperationsActions {
       await service.delete(
         provider: provider,
         entries: entries,
+        wipe: wipeSelected,
       );
       
       if (context.mounted) {

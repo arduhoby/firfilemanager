@@ -357,6 +357,7 @@ class FileOperationsService extends _$FileOperationsService {
     required StorageProvider provider,
     required List<FileEntry> entries,
     bool hideProgress = false,
+    bool wipe = false,
   }) async {
     if (entries.isEmpty) return;
 
@@ -376,6 +377,9 @@ class FileOperationsService extends _$FileOperationsService {
       }
 
       try {
+        if (wipe) {
+          await _wipeFile(provider, entry.path);
+        }
         await provider.delete(entry.path);
       } catch (e) {
         if (!hideProgress) {
@@ -397,6 +401,38 @@ class FileOperationsService extends _$FileOperationsService {
         filesTransferred: entries.length,
         totalFiles: entries.length,
       ));
+    }
+  }
+
+  Future<void> _wipeFile(StorageProvider provider, String path) async {
+    try {
+      final stat = await provider.stat(path);
+      if (stat.isDirectory) {
+        final children = await provider.list(path, const ListOptions(showHidden: true));
+        for (final child in children) {
+          await _wipeFile(provider, child.path);
+        }
+      } else {
+        final size = stat.size;
+        if (size > 0) {
+          final controller = StreamController<List<int>>();
+          final stream = provider.write(path, controller.stream);
+          final writeFuture = stream.drain();
+          
+          const chunkSize = 64 * 1024;
+          var remaining = size;
+          while (remaining > 0) {
+            final writeSize = remaining < chunkSize ? remaining : chunkSize;
+            controller.add(List<int>.filled(writeSize, 0));
+            remaining -= writeSize;
+            await Future.delayed(Duration.zero);
+          }
+          await controller.close();
+          await writeFuture;
+        }
+      }
+    } catch (e) {
+      // Ignore wipe errors and fall back to normal delete
     }
   }
 
