@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -248,7 +249,22 @@ class _PanelPathBarState extends ConsumerState<PanelPathBar> {
     }
 
     final path = state.activeTab.currentPath;
-    final segments = path.split('/').where((s) => s.isNotEmpty).toList();
+    // Windows paths use \ separator, Unix paths use /. Split by both.
+    final isWindowsPath = Platform.isWindows && path.contains('\\');
+    final separator = isWindowsPath ? '\\' : '/';
+    final segments = path.split(RegExp(r'[\\/]')).where((s) => s.isNotEmpty).toList();
+
+    // Reconstruct a path up to segment index i (1-based)
+    String buildPathUpTo(int segIndex) {
+      final parts = segments.take(segIndex + 1).toList();
+      if (isWindowsPath) {
+        // e.g. ['C:', 'Users'] -> 'C:\Users'
+        return parts.join('\\');
+      } else {
+        // e.g. ['Users', 'melih'] -> '/Users/melih'
+        return '/${parts.join('/')}';
+      }
+    }
 
     return GlassContainer(
       borderRadius: BorderRadius.zero,
@@ -316,7 +332,7 @@ class _PanelPathBarState extends ConsumerState<PanelPathBar> {
                         Icon(Icons.chevron_right, size: 16, color: theme.colorScheme.onSurfaceVariant),
                         InkWell(
                           onTap: () {
-                            final targetPath = '/${segments.take(i + 1).join('/')}';
+                            final targetPath = buildPathUpTo(i);
                             ref.read(panelControllerProvider.notifier).navigate(widget.side, targetPath);
                           },
                           child: Padding(

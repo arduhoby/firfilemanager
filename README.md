@@ -13,7 +13,7 @@ Fir File Manager is a modern, cross-platform dual-pane file manager built with F
 - **Extensive File Operations**: Seamlessly Copy, Cut, Paste, Rename, Move, and Delete files and directories.
 - **Drag & Drop Support**: Move files effortlessly between panels with drag and drop capabilities.
 - **Keyboard Shortcuts & Clean UI**: Fully keyboard navigable for power users (F5 for Copy, F6 for Move, Cmd+C/Cmd+V, etc.) with custom hover-animated buttons built from state-of-the-art design systems.
-- **Multi-Protocol Support (WIP)**: Built-in abstractions for Local, FTP, and SMB file systems.
+- **Multi-Protocol Support**: Built-in abstractions for Local, FTP, and Cloud Storage (Google Drive) filesystems.
 
 ## Getting Started
 
@@ -38,7 +38,7 @@ Fir File Manager, Flutter ile geliştirilmiş modern, çok platformlu ve çift p
 - **Kapsamlı Dosya İşlemleri**: Kopyalama, kesme, yapıştırma, yeniden adlandırma, taşıma ve silme gibi tüm klasik dosya işlemlerini destekler.
 - **Sürükle & Bırak (Drag & Drop)**: Paneller arasında dosyaları farenizle rahatça sürükleyip bırakabilirsiniz.
 - **Klavye Kısayolları ve Modern Arayüz**: Gelişmiş kullanıcılar için tamamen klavye ile yönetilebilir yapı (F5 Kopyalama, F6 Taşıma, Cmd+C/Cmd+V vb.) ve Uiverse tabanlı modern animasyonlu butonlar.
-- **Çoklu Protokol (WIP)**: Yerel (Local), FTP ve SMB dosya sistemleri için esnek altyapı destekleri içerir.
+- **Çoklu Protokol**: Yerel (Local), FTP ve Bulut Depolama (Google Drive) dosya sistemleri için esnek altyapı destekleri içerir.
 
 ## Başlangıç
 

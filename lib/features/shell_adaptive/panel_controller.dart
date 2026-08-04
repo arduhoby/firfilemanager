@@ -109,24 +109,25 @@ class PanelController extends _$PanelController {
     _cancelWatcher(side);
     try {
       final dir = Directory(path);
-      if (dir.existsSync()) {
-        final sub = dir.watch(events: FileSystemEvent.all, recursive: false).listen((event) {
-          // Add a small delay to debounce multiple rapid events
-          Future.delayed(const Duration(milliseconds: 100), () {
-            if (side == PanelSide.a) {
-              final activePath = ref.read(panelAProvider).activeTab.currentPath;
-              if (activePath == path) refresh(side);
-            } else {
-              final activePath = ref.read(panelBProvider).activeTab.currentPath;
-              if (activePath == path) refresh(side);
-            }
-          });
+      if (!dir.existsSync()) return;
+      // Drive roots on Windows (e.g. 'C:\') cannot be watched reliably
+      if (Platform.isWindows && RegExp(r'^[a-zA-Z]:\\?$').hasMatch(path)) return;
+      final sub = dir.watch(events: FileSystemEvent.all, recursive: false).listen((event) {
+        // Add a small delay to debounce multiple rapid events
+        Future.delayed(const Duration(milliseconds: 100), () {
+          if (side == PanelSide.a) {
+            final activePath = ref.read(panelAProvider).activeTab.currentPath;
+            if (activePath == path) refresh(side);
+          } else {
+            final activePath = ref.read(panelBProvider).activeTab.currentPath;
+            if (activePath == path) refresh(side);
+          }
         });
-        if (side == PanelSide.a) {
-          _watchSubscriptionA = sub;
-        } else {
-          _watchSubscriptionB = sub;
-        }
+      });
+      if (side == PanelSide.a) {
+        _watchSubscriptionA = sub;
+      } else {
+        _watchSubscriptionB = sub;
       }
     } catch (e) {
       print('PANEL_CONTROLLER: Failed to setup watcher for $path: $e');
@@ -141,9 +142,15 @@ class PanelController extends _$PanelController {
     if (resolvedProviderId == null) {
       bool isLocal = false;
       if (Platform.isWindows) {
-        isLocal = RegExp(r'^[a-zA-Z]:[/\\]').hasMatch(path) || path == '/';
+        // Only treat Windows drive paths (e.g. C:\, D:\) as local
+        isLocal = RegExp(r'^[a-zA-Z]:[/\\]').hasMatch(path);
       } else {
-        isLocal = path.startsWith('/Users/') || path.startsWith('/home/') || path.startsWith('/tmp/') || Directory(path).existsSync() || path == '/';
+        isLocal = path.startsWith('/Users/') ||
+            path.startsWith('/home/') ||
+            path.startsWith('/tmp/') ||
+            path.startsWith('/storage/') ||
+            path.startsWith('/sdcard') ||
+            Directory(path).existsSync();
       }
       if (isLocal) {
         resolvedProviderId = 'local';
@@ -171,12 +178,20 @@ class PanelController extends _$PanelController {
         ? ref.read(panelAProvider)
         : ref.read(panelBProvider);
 
-    final provider = _getProviderForPath(side, panelState.activeTab.currentPath);
-    final parent = provider.dirname(panelState.activeTab.currentPath);
+    final currentPath = panelState.activeTab.currentPath;
+    final provider = _getProviderForPath(side, currentPath);
+    final parent = provider.dirname(currentPath);
 
-    if (parent != panelState.activeTab.currentPath) {
-      await navigate(side, parent);
+    // Don't navigate if we're already at the root (dirname returns same path)
+    if (parent == currentPath) return;
+
+    // On Windows, if at drive root like 'C:\', dirname returns 'C:\' again — guard against that
+    if (Platform.isWindows) {
+      final normalized = currentPath.replaceAll('/', '\\');
+      if (RegExp(r'^[a-zA-Z]:\\?$').hasMatch(normalized)) return;
     }
+
+    await navigate(side, parent);
   }
 
   /// Navigate back in history
@@ -197,9 +212,14 @@ class PanelController extends _$PanelController {
     try {
       final provider = _getProviderForPath(side, panelState.activeTab.currentPath);
       final home = await provider.homePath;
-      await navigate(side, home);
+      await navigate(side, home, providerId: panelState.activeTab.providerId);
     } catch (e) {
-      // Ignore if provider doesn't exist
+      // Fallback to local home
+      try {
+        final localProvider = ref.read(localStorageProviderProvider);
+        final home = await localProvider.homePath;
+        await navigate(side, home, providerId: 'local');
+      } catch (_) {}
     }
   }
 

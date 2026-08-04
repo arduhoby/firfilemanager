@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../connections/connections_sidebar.dart';
 import '../../l10n/generated/app_localizations.dart';
 import '../file_operations/file_operations_state.dart';
 import 'file_panel.dart';
@@ -62,6 +63,20 @@ class _MobileShellState extends ConsumerState<MobileShell> {
           title: const Text('Fir File Manager'),
           actions: [
             IconButton(
+              icon: const Icon(Icons.hub_outlined),
+              tooltip: 'Sunucular & Bağlantılar',
+              onPressed: () {
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (context) => SizedBox(
+                    height: MediaQuery.of(context).size.height * 0.75,
+                    child: const ConnectionsSidebar(),
+                  ),
+                );
+              },
+            ),
+            IconButton(
               icon: const Icon(Icons.splitscreen),
               tooltip: 'Tek panele geç',
               onPressed: () {
@@ -95,6 +110,20 @@ class _MobileShellState extends ConsumerState<MobileShell> {
       appBar: AppBar(
         title: const Text('Fir File Manager'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.hub_outlined),
+            tooltip: 'Sunucular & Bağlantılar',
+            onPressed: () {
+              showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                builder: (context) => SizedBox(
+                  height: MediaQuery.of(context).size.height * 0.75,
+                  child: const ConnectionsSidebar(),
+                ),
+              );
+            },
+          ),
           if (isLandscape)
             IconButton(
               icon: const Icon(Icons.vertical_split),

@@ -1,4 +1,5 @@
-import 'package:flutter/widgets.dart';
+import 'dart:io';
+import 'package:flutter/material.dart';
 
 /// Determines which shell layout to use based on screen size and orientation.
 ///
@@ -23,6 +24,12 @@ class LayoutResolver {
   static ShellLayout resolve(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
     final orientation = MediaQuery.orientationOf(context);
+    final isAndroid = Theme.of(context).platform == TargetPlatform.android || Platform.isAndroid;
+
+    // On Android in portrait mode, always show single panel
+    if (isAndroid && orientation == Orientation.portrait) {
+      return ShellLayout.category;
+    }
 
     // Desktop and large tablets
     if (size.width >= 900) {

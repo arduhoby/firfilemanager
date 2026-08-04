@@ -137,10 +137,11 @@ class AppTheme {
           waitDuration: const Duration(milliseconds: 400),
         ),
         scrollbarTheme: ScrollbarThemeData(
-          thumbVisibility: WidgetStateProperty.all(false),
-          thickness: WidgetStateProperty.all(6),
-          radius: const Radius.circular(3),
-          thumbColor: WidgetStateProperty.all(const Color(0x40000000)),
+          thumbVisibility: WidgetStateProperty.all(true),
+          interactive: true,
+          thickness: WidgetStateProperty.all(8),
+          radius: const Radius.circular(4),
+          thumbColor: WidgetStateProperty.all(const Color(0x60000000)),
         ),
         popupMenuTheme: PopupMenuThemeData(
           color: const Color(0xF5FFFFFF),
@@ -280,10 +281,11 @@ class AppTheme {
           waitDuration: const Duration(milliseconds: 400),
         ),
         scrollbarTheme: ScrollbarThemeData(
-          thumbVisibility: WidgetStateProperty.all(false),
-          thickness: WidgetStateProperty.all(6),
-          radius: const Radius.circular(3),
-          thumbColor: WidgetStateProperty.all(const Color(0x40FFFFFF)),
+          thumbVisibility: WidgetStateProperty.all(true),
+          interactive: true,
+          thickness: WidgetStateProperty.all(8),
+          radius: const Radius.circular(4),
+          thumbColor: WidgetStateProperty.all(const Color(0x60FFFFFF)),
         ),
         popupMenuTheme: PopupMenuThemeData(
           color: const Color(0xF02C2C2E),

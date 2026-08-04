@@ -26,13 +26,21 @@ class FileOperationsService extends _$FileOperationsService {
     // No state needed — this is a service provider
   }
 
-  /// Copy selected entries from source panel to dest path
+  /// Copy selected entries from source panel to dest path.
+  ///
+  /// [overwriteCallback] is called when a destination file already exists.
+  /// It receives the file name and should return:
+  ///   'overwrite' — overwrite the existing file
+  ///   'rename'    — auto-rename (add "copy N" suffix)
+  ///   'skip'      — skip this file
+  ///   null        — cancel entire operation
   Future<void> copy({
     required StorageProvider sourceProvider,
     required List<FileEntry> entries,
     required StorageProvider destProvider,
     required String destPath,
     bool isMove = false,
+    Future<String?> Function(String fileName)? overwriteCallback,
   }) async {
     if (entries.isEmpty) return;
 
@@ -47,19 +55,36 @@ class FileOperationsService extends _$FileOperationsService {
       final dirName = destProvider.normalizePath(destPath);
       var destEntryPath = destProvider.joinPath(dirName, entry.name);
 
-      var counter = 1;
-      final originalName = destProvider.basename(destEntryPath);
-      while (await destProvider.exists(destEntryPath)) {
-        if (!entry.isDirectory && originalName.contains('.')) {
-          final dotIndex = originalName.lastIndexOf('.');
-          final base = originalName.substring(0, dotIndex);
-          final ext = originalName.substring(dotIndex);
-          destEntryPath = destProvider.joinPath(dirName, '$base copy $counter$ext');
-        } else {
-          destEntryPath = destProvider.joinPath(dirName, '$originalName copy $counter');
+      // Check if destination already exists
+      if (await destProvider.exists(destEntryPath)) {
+        final decision = overwriteCallback != null
+            ? await overwriteCallback(entry.name)
+            : 'rename'; // default: auto-rename when no callback provided
+
+        if (decision == null) {
+          // Cancel entire operation
+          break;
+        } else if (decision == 'skip') {
+          continue;
+        } else if (decision == 'rename') {
+          // Auto-rename with "copy N" suffix
+          var counter = 1;
+          final originalName = destProvider.basename(destEntryPath);
+          while (await destProvider.exists(destEntryPath)) {
+            if (!entry.isDirectory && originalName.contains('.')) {
+              final dotIndex = originalName.lastIndexOf('.');
+              final base = originalName.substring(0, dotIndex);
+              final ext = originalName.substring(dotIndex);
+              destEntryPath = destProvider.joinPath(dirName, '$base copy $counter$ext');
+            } else {
+              destEntryPath = destProvider.joinPath(dirName, '$originalName copy $counter');
+            }
+            counter++;
+          }
         }
-        counter++;
+        // 'overwrite': proceed with original destEntryPath — provider.write() will overwrite
       }
+
       progress.setProgress(TransferProgress(
         operation: isMove ? TransferOperation.move : TransferOperation.copy,
         state: TransferState.inProgress,

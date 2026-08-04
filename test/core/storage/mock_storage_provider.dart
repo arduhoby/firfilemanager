@@ -328,6 +328,7 @@ class MockStorageProvider implements StorageProvider {
   Future<DiskSpaceInfo> getDiskSpaceInfo(String path) async {
     return const DiskSpaceInfo(
       totalBytes: 2048 * 1024 * 1024,
+      usedBytes: 1024 * 1024 * 1024,
       freeBytes: 1024 * 1024 * 1024,
       usedBytes: 1024 * 1024 * 1024,
     );

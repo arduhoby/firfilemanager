@@ -77,8 +77,10 @@ class LocalProvider implements StorageProvider {
     final showHidden = options?.showHidden ?? false;
     final result = <FileEntry>[];
 
+    Object? streamError;
     final stream = dir.list().handleError((e) {
-      // Ignore concurrent modification or permission errors during listing
+      streamError = e;
+      debugPrint('LocalProvider list error for path=$path: $e');
     });
 
     await for (final entity in stream) {
@@ -96,6 +98,14 @@ class LocalProvider implements StorageProvider {
       } catch (e) {
         // Skip files that were deleted or unreadable before stat completed
       }
+    }
+
+    if (result.isEmpty && streamError != null) {
+      throw StorageException(
+        'Dizin okunamadı veya izin verilmedi: $streamError',
+        code: StorageException.accessDenied,
+        path: path,
+      );
     }
 
     return result;
@@ -555,7 +565,14 @@ class LocalProvider implements StorageProvider {
 
     try {
       if (Platform.isAndroid) {
-        return '/storage/emulated/0';
+        const primaryStorage = '/storage/emulated/0';
+        if (Directory(primaryStorage).existsSync()) {
+          return primaryStorage;
+        }
+        final externalDir = await getExternalStorageDirectory();
+        if (externalDir != null && externalDir.existsSync()) {
+          return externalDir.path;
+        }
       }
       final home = await getApplicationDocumentsDirectory();
       return home.path;

@@ -43,15 +43,24 @@ class NextcloudProvider implements StorageProvider {
       // Strip trailing slash if present
       final cleanHost = host.endsWith('/') ? host.substring(0, host.length - 1) : host;
       
-      final baseUrl = '$protocol://$cleanHost:${profile.effectivePort}/remote.php/webdav';
+      final portSuffix = (profile.port != null) ? ':${profile.port}' : '';
+      final username = profile.username ?? '';
+      final encodedUsername = Uri.encodeComponent(username);
+      
+      if (username.isEmpty) {
+        throw Exception('Kullanıcı adı gerekli (Username is required for Nextcloud)');
+      }
+
+      // Modern Nextcloud WebDAV URL: /remote.php/dav/files/USERNAME/
+      final baseUrl = '$protocol://$cleanHost$portSuffix/remote.php/dav/files/$encodedUsername';
 
       if (profile.authMethod == AuthMethod.password) {
         if (password == null || password!.isEmpty) {
-          throw Exception('Password is required for Basic Auth');
+          throw Exception('Şifre gerekli (Password is required for Basic Auth)');
         }
         _client = newClient(
           baseUrl,
-          user: profile.username ?? '',
+          user: username,
           password: password ?? '',
         );
       } else {
@@ -62,9 +71,32 @@ class NextcloudProvider implements StorageProvider {
       await _client!.readDir('/');
       _isConnected = true;
       _connectionController.add(true);
-    } catch (e) {
+    } catch (e, stack) {
       _isConnected = false;
-      throw StorageException('Nextcloud connection failed: $e', cause: e);
+      
+      // Fallback: Try legacy WebDAV endpoint
+      try {
+        final protocol = profile.effectivePort == 443 ? 'https' : 'http';
+        var host = profile.host ?? '';
+        if (host.startsWith('http://')) host = host.substring(7);
+        if (host.startsWith('https://')) host = host.substring(8);
+        final cleanHost = host.endsWith('/') ? host.substring(0, host.length - 1) : host;
+        final portSuffix = (profile.port != null) ? ':${profile.port}' : '';
+        
+        final legacyBaseUrl = '$protocol://$cleanHost$portSuffix/remote.php/webdav';
+        
+        _client = newClient(
+          legacyBaseUrl,
+          user: profile.username ?? '',
+          password: password ?? '',
+        );
+        await _client!.readDir('/');
+        _isConnected = true;
+        _connectionController.add(true);
+        return;
+      } catch (fallbackError) {
+        throw StorageException('Nextcloud connection failed. Modern error: $e. Legacy error: $fallbackError', cause: fallbackError);
+      }
     }
   }
 

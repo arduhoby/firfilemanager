@@ -9,6 +9,7 @@ import '../../core/storage/storage_provider.dart';
 import '../../core/storage/storage_provider_service.dart';
 import '../../core/settings/recent_service.dart';
 import '../connections/connection_repository.dart';
+import '../connections/connection_dialog.dart';
 import '../file_operations/file_operations_state.dart';
 import '../file_operations/file_open_service.dart';
 import 'panel_controller.dart';
@@ -167,19 +168,18 @@ class _PanelDriveBarState extends ConsumerState<PanelDriveBar> {
 
     final allItems = <_DriveItem>[..._localDrives];
 
-    // Add active remote connections
+    // Add remote connections (both active and saved)
     for (final profile in connections) {
       final provider = registry[profile.id];
-      if (provider != null && provider.isConnected) {
-        allItems.add(_DriveItem(
-          id: profile.id,
-          path: '/', // Root of the connection
-          name: profile.name,
-          icon: _getIconForType(profile.type),
-          color: _getColorForType(profile.type, theme),
-          isLocal: false,
-        ));
-      }
+      final isConn = provider != null && provider.isConnected;
+      allItems.add(_DriveItem(
+        id: profile.id,
+        path: '/',
+        name: profile.name,
+        icon: _getIconForType(profile.type),
+        color: isConn ? _getColorForType(profile.type, theme) : theme.disabledColor,
+        isLocal: false,
+      ));
     }
 
     return Container(
@@ -225,7 +225,20 @@ class _PanelDriveBarState extends ConsumerState<PanelDriveBar> {
                     );
                   } else {
                     try {
-                      final provider = registry[item.id]!;
+                      final profile = connections.firstWhere((p) => p.id == item.id);
+                      final repo = ref.read(connectionRepositoryProvider.notifier);
+                      final password = await repo.getPassword(profile.id);
+                      final privateKey = await repo.getPrivateKey(profile.id);
+                      final clientId = await repo.getClientId(profile.id);
+                      final clientSecret = await repo.getClientSecret(profile.id);
+                      
+                      final provider = await ref.read(storageProviderRegistryProvider.notifier).getOrCreate(
+                        profile,
+                        password: password,
+                        privateKey: privateKey,
+                        clientId: clientId,
+                        clientSecret: clientSecret,
+                      );
                       final homePath = await provider.homePath;
                       ref.read(panelControllerProvider.notifier).navigate(
                         widget.side,
@@ -235,12 +248,24 @@ class _PanelDriveBarState extends ConsumerState<PanelDriveBar> {
                     } catch (e) {
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Cannot open: $e')),
+                          SnackBar(content: Text('Bağlantı hatası: $e')),
                         );
                       }
                     }
                   }
                 },
+                onLongPress: !item.isLocal
+                    ? () {
+                        final RenderBox box = context.findRenderObject() as RenderBox;
+                        final offset = box.localToGlobal(Offset.zero);
+                        _showDriveContextMenu(context, offset, item);
+                      }
+                    : null,
+                onSecondaryTapDown: !item.isLocal
+                    ? (details) {
+                        _showDriveContextMenu(context, details.globalPosition, item);
+                      }
+                    : null,
                 child: Container(
                   width: 44, // reduced from 56 to take up less width
                   padding: const EdgeInsets.symmetric(vertical: 1),
@@ -280,6 +305,21 @@ class _PanelDriveBarState extends ConsumerState<PanelDriveBar> {
           ),
           // Disk Space Indicator (also shown in status bar now, but kept here for now or we can remove it from here)
           // Removing from here to avoid duplication. It will be moved to the status bar.
+          // Add Connection Button
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2.0),
+            child: IconButton(
+              icon: const Icon(Icons.add_link, size: 16),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              splashRadius: 12,
+              onPressed: () => showDialog(
+                context: context,
+                builder: (_) => const ConnectionDialog(),
+              ),
+              tooltip: 'Yeni Bağlantı Ekle',
+            ),
+          ),
           // Recents Button
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 2.0),
@@ -299,6 +339,99 @@ class _PanelDriveBarState extends ConsumerState<PanelDriveBar> {
         ],
       ),
     );
+  }
+
+  void _showDriveContextMenu(BuildContext context, Offset globalPosition, _DriveItem item) {
+    final connections = ref.read(connectionRepositoryProvider);
+    final profile = connections.where((p) => p.id == item.id).firstOrNull;
+    if (profile == null) return;
+
+    final registry = ref.read(storageProviderRegistryProvider);
+    final provider = registry[item.id];
+    final isConnected = provider != null && provider.isConnected;
+
+    showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        globalPosition.dx,
+        globalPosition.dy,
+        globalPosition.dx + 1,
+        globalPosition.dy + 1,
+      ),
+      items: [
+        if (isConnected)
+          const PopupMenuItem(
+            value: 'disconnect',
+            child: Row(
+              children: [
+                Icon(Icons.link_off, size: 18),
+                SizedBox(width: 8),
+                Text('Bağlantıyı Kes'),
+              ],
+            ),
+          ),
+        const PopupMenuItem(
+          value: 'edit',
+          child: Row(
+            children: [
+              Icon(Icons.edit, size: 18),
+              SizedBox(width: 8),
+              Text('Düzenle'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'delete',
+          child: Row(
+            children: [
+              Icon(Icons.delete_outline, color: Colors.red, size: 18),
+              SizedBox(width: 8),
+              Text('Bağlantıyı Sil / Kaldır', style: TextStyle(color: Colors.red)),
+            ],
+          ),
+        ),
+      ],
+    ).then((value) async {
+      if (value == null) return;
+      if (value == 'disconnect') {
+        await ref.read(storageProviderRegistryProvider.notifier).unregister(profile.id);
+        if (mounted) setState(() {});
+      } else if (value == 'edit') {
+        showDialog(
+          context: context,
+          builder: (_) => ConnectionDialog(existingProfile: profile),
+        );
+      } else if (value == 'delete') {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Bağlantıyı Kaldır'),
+            content: Text('"${profile.name}" bağlantısını kaldırmak istediğinize emin misiniz?'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('İptal')),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Kaldır'),
+              ),
+            ],
+          ),
+        );
+        if (confirmed == true) {
+          await ref.read(connectionRepositoryProvider.notifier).deleteConnection(profile.id);
+          await ref.read(storageProviderRegistryProvider.notifier).unregister(profile.id);
+
+          final activeState = widget.side == PanelSide.a
+              ? ref.read(panelAProvider)
+              : ref.read(panelBProvider);
+          if (activeState.activeTab.providerId == profile.id) {
+            final localProvider = ref.read(localStorageProviderProvider);
+            final homePath = await localProvider.homePath;
+            ref.read(panelControllerProvider.notifier).navigate(widget.side, homePath, providerId: 'local');
+          }
+        }
+      }
+    });
   }
 
   void _showRecentsMenu(BuildContext context, ThemeData theme) {

@@ -42,40 +42,25 @@ class GoogleDriveProvider implements StorageProvider {
   @override
   Future<void> connect() async {
     try {
-      if (Platform.isAndroid || Platform.isIOS) {
-        // Use native Google Sign-In for Mobile
-        final account = await _googleSignIn.signIn();
-        if (account == null) {
-          throw Exception('Kullanıcı girişi iptal etti.');
-        }
-        
-        final authClient = await _googleSignIn.authenticatedClient();
-        if (authClient == null) {
-           throw Exception('Kimlik doğrulama istemcisi oluşturulamadı.');
-        }
-        _api = drive.DriveApi(authClient);
-      } else {
-        // Fallback to Desktop/Web localhost flow using googleapis_auth
-        final effectiveClientId = clientId ?? Env.googleDriveClientId;
-        final effectiveClientSecret = clientSecret ?? Env.googleDriveClientSecret;
+      final effectiveClientId = clientId ?? Env.googleDriveClientId;
+      final effectiveClientSecret = clientSecret ?? Env.googleDriveClientSecret;
 
-        if (effectiveClientId.isEmpty) {
-          throw Exception('Google Drive Client ID must be provided.');
-        }
-
-        final id = ClientId(effectiveClientId, effectiveClientSecret);
-        final scopes = [drive.DriveApi.driveScope];
-
-        final authClient = await clientViaUserConsent(id, scopes, (url) async {
-          final uri = Uri.parse(url);
-          try {
-            await launchUrl(uri, mode: LaunchMode.externalApplication);
-          } catch (e) {
-            throw Exception('Could not launch Google Sign In URL: $e');
-          }
-        });
-        _api = drive.DriveApi(authClient);
+      if (effectiveClientId.isEmpty) {
+        throw Exception('Google Drive Client ID must be provided.');
       }
+
+      final id = ClientId(effectiveClientId, effectiveClientSecret);
+      final scopes = [drive.DriveApi.driveScope];
+
+      final authClient = await clientViaUserConsent(id, scopes, (url) async {
+        final uri = Uri.parse(url);
+        try {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        } catch (e) {
+          throw Exception('Could not launch Google Sign In URL: $e');
+        }
+      });
+      _api = drive.DriveApi(authClient);
     } catch (e, st) {
       print('Google Drive Connection Error: $e\n$st');
       throw StorageException('Failed to connect to Google Drive: $e');
@@ -84,9 +69,6 @@ class GoogleDriveProvider implements StorageProvider {
 
   @override
   Future<void> disconnect() async {
-    if (Platform.isAndroid || Platform.isIOS) {
-      await _googleSignIn.signOut();
-    }
     _api = null;
   }
   

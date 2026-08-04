@@ -479,6 +479,7 @@ class FileOperationsActions extends _$FileOperationsActions {
       entries: sourceState.activeTab.selectedEntries,
       destProvider: destProvider,
       destPath: destPath,
+      overwriteCallback: (fileName) => _showOverwriteDialog(context, fileName),
     );
 
     await ref.read(panelControllerProvider.notifier).refresh(destSide);
@@ -537,6 +538,77 @@ class FileOperationsActions extends _$FileOperationsActions {
         _showErrorSnackBar(context, e.toString());
       }
     }
+  }
+
+  /// Shows a dialog asking what to do when a destination file already exists.
+  /// Returns: 'overwrite', 'rename', 'skip', or null (cancel all).
+  Future<String?> _showOverwriteDialog(BuildContext context, String fileName) async {
+    final theme = Theme.of(context);
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: theme.colorScheme.error),
+            const SizedBox(width: 10),
+            const Text('Dosya Zaten Var'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Hedef konumda aynı isimde bir dosya mevcut:'),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.insert_drive_file_outlined, size: 18, color: theme.colorScheme.onSurfaceVariant),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      fileName,
+                      style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text('Ne yapmak istersiniz?'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, null),
+            child: const Text('İptal'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'skip'),
+            child: const Text('Atla'),
+          ),
+          OutlinedButton.icon(
+            onPressed: () => Navigator.pop(context, 'rename'),
+            icon: const Icon(Icons.drive_file_rename_outline, size: 16),
+            label: const Text('Yeniden Adlandır'),
+          ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: theme.colorScheme.error),
+            onPressed: () => Navigator.pop(context, 'overwrite'),
+            icon: const Icon(Icons.file_copy_outlined, size: 16),
+            label: const Text('Üzerine Yaz'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<String?> _showTransferDialog(

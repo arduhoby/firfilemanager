@@ -19,8 +19,9 @@ void main() async {
     if (Platform.isAndroid) {
       await Permission.manageExternalStorage.request();
     }
-    // Lock to landscape for mobile devices for now
     await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
       DeviceOrientation.landscapeRight,
       DeviceOrientation.landscapeLeft,
     ]);

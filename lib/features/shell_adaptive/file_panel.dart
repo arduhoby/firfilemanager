@@ -766,8 +766,11 @@ class _FilePanelState extends ConsumerState<FilePanel> {
           color: isDropTarget ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.1) : null,
           child: Scrollbar(
             controller: _scrollController,
+            thumbVisibility: true,
+            interactive: true,
             child: ListView.builder(
               controller: _scrollController,
+              physics: const AlwaysScrollableScrollPhysics(),
               itemCount: state.activeTab.entries.length,
               itemBuilder: (context, index) {
                 final entry = state.activeTab.entries[index];
@@ -1156,45 +1159,60 @@ class _FileListTile extends ConsumerWidget {
         ? panelState.activeTab.selectedEntries 
         : [entry];
 
-    return Draggable<PanelDragData>(
-      data: PanelDragData(sourceSide: side, entries: dragEntries),
-      feedback: Material(
-        color: Colors.transparent,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: theme.colorScheme.primaryContainer.withValues(alpha: 0.9),
-            borderRadius: BorderRadius.circular(8),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.2),
-                blurRadius: 8,
-                offset: const Offset(0, 4),
+    final feedbackWidget = Material(
+      color: Colors.transparent,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.primaryContainer.withValues(alpha: 0.9),
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.2),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(_getIcon(dragEntries.first), size: 24, color: theme.colorScheme.onPrimaryContainer),
+            if (dragEntries.length > 1) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${dragEntries.length}',
+                  style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onPrimary),
+                ),
               ),
             ],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(_getIcon(dragEntries.first), size: 24, color: theme.colorScheme.onPrimaryContainer),
-              if (dragEntries.length > 1) ...[
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.primary,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    '${dragEntries.length}',
-                    style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onPrimary),
-                  ),
-                ),
-              ],
-            ],
-          ),
+          ],
         ),
       ),
+    );
+
+    final isMobile = Platform.isAndroid || Platform.isIOS;
+    if (isMobile) {
+      return LongPressDraggable<PanelDragData>(
+        data: PanelDragData(sourceSide: side, entries: dragEntries),
+        feedback: feedbackWidget,
+        childWhenDragging: Opacity(
+          opacity: 0.5,
+          child: tileContent,
+        ),
+        child: tileContent,
+      );
+    }
+
+    return Draggable<PanelDragData>(
+      data: PanelDragData(sourceSide: side, entries: dragEntries),
+      feedback: feedbackWidget,
       childWhenDragging: Opacity(
         opacity: 0.5,
         child: tileContent,

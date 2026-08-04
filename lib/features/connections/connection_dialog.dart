@@ -57,10 +57,14 @@ class _ConnectionDialogState extends ConsumerState<ConnectionDialog> {
     final repo = ref.read(connectionRepositoryProvider.notifier);
     final clientId = await repo.getClientId(id);
     final clientSecret = await repo.getClientSecret(id);
+    final password = await repo.getPassword(id);
+    final privateKey = await repo.getPrivateKey(id);
     if (mounted) {
       setState(() {
         _clientIdController.text = clientId ?? '';
         _clientSecretController.text = clientSecret ?? '';
+        _passwordController.text = password ?? '';
+        _keyController.text = privateKey ?? '';
       });
     }
   }
@@ -159,7 +163,36 @@ class _ConnectionDialogState extends ConsumerState<ConnectionDialog> {
       final clientId = _clientIdController.text.trim();
       final clientSecret = _clientSecretController.text.trim();
 
+      final existingProfiles = ref.read(connectionRepositoryProvider);
+
       if (widget.existingProfile == null || repo.getById(widget.existingProfile!.id) == null) {
+        // Check for duplicates
+        final isDuplicate = existingProfiles.any((p) {
+          if (_selectedType == ConnectionType.gdrive ||
+              _selectedType == ConnectionType.dropbox ||
+              _selectedType == ConnectionType.onedrive) {
+            return p.type == _selectedType;
+          }
+          if (_selectedType.requiresHost) {
+            return p.type == _selectedType &&
+                p.host?.toLowerCase() == profile.host?.toLowerCase() &&
+                p.username?.toLowerCase() == profile.username?.toLowerCase();
+          }
+          return false;
+        });
+
+        if (isDuplicate) {
+          final typeName = _selectedType == ConnectionType.gdrive ? 'Google Drive' : profile.name;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('$typeName bağlantısı zaten ekli! Tekrar eklenemez.'),
+              backgroundColor: Colors.orange.shade800,
+            ),
+          );
+          setState(() => _isSaving = false);
+          return;
+        }
+
         await repo.addConnection(
           profile,
           password: password,
@@ -381,7 +414,7 @@ class _ConnectionDialogState extends ConsumerState<ConnectionDialog> {
                   maxLines: 4,
                 )
               else if (_selectedAuth == AuthMethod.oauth2) ...[
-                if (_selectedType != ConnectionType.gdrive || (!Platform.isAndroid && !Platform.isIOS)) ...[
+                if (_selectedType != ConnectionType.gdrive) ...[
                   TextField(
                     controller: _clientIdController,
                     decoration: const InputDecoration(
