@@ -121,26 +121,109 @@ class NetworkScanner extends _$NetworkScanner {
       final interfaces = await NetworkInterface.list(
         type: InternetAddressType.IPv4,
       );
+      final defaultGateway = await _getDefaultGateway();
 
-      // Sort interfaces to prioritize 'wlan' and 'en' (WiFi/Ethernet) over 'rmnet' (cellular)
-      interfaces.sort((a, b) {
-        final aIsWifi = a.name.startsWith('wlan') || a.name.startsWith('en');
-        final bIsWifi = b.name.startsWith('wlan') || b.name.startsWith('en');
-        if (aIsWifi && !bIsWifi) return -1;
-        if (!aIsWifi && bIsWifi) return 1;
-        return 0;
-      });
-
+      final candidates = <({String ip, int score})>[];
       for (final interface in interfaces) {
+        final interfaceName = interface.name.toLowerCase();
+        final isVirtual = _virtualInterfaceMarkers.any(interfaceName.contains);
+        final isPhysical = _physicalInterfaceMarkers.any(interfaceName.contains);
+
         for (final addr in interface.addresses) {
-          // Skip loopback and prefer private network IPs (192.168.x.x, 10.x.x.x, 172.16.x.x)
-          if (!addr.isLoopback) {
-            return addr.address;
+          final ip = addr.address;
+          if (addr.isLoopback || !_isPrivateIpv4(ip) || _isLinkLocal(ip)) {
+            continue;
           }
+
+          var score = _networkRangeScore(ip);
+          if (defaultGateway != null && _sameSubnet(ip, defaultGateway)) {
+            score += 1000;
+          }
+          if (isPhysical) score += 100;
+          if (isVirtual) score -= 100;
+          candidates.add((ip: ip, score: score));
         }
       }
+
+      candidates.sort((a, b) => b.score.compareTo(a.score));
+      if (candidates.isNotEmpty) return candidates.first.ip;
     } catch (_) {}
     return null;
+  }
+
+  Future<String?> _getDefaultGateway() async {
+    if (!Platform.isWindows) return null;
+    try {
+      final result = await Process.run('route', ['print', '-4']);
+      final output = '${result.stdout}\n${result.stderr}';
+      final routePattern = RegExp(
+        r'^\s*0\.0\.0\.0\s+0\.0\.0\.0\s+'
+        r'(\d{1,3}(?:\.\d{1,3}){3})\s+\d{1,3}(?:\.\d{1,3}){3}',
+        multiLine: true,
+      );
+      return routePattern.firstMatch(output)?.group(1);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static const _physicalInterfaceMarkers = [
+    'ethernet',
+    'wi-fi',
+    'wifi',
+    'wlan',
+    'en0',
+    'en1',
+    'eth',
+  ];
+
+  static const _virtualInterfaceMarkers = [
+    'virtual',
+    'vethernet',
+    'docker',
+    'wsl',
+    'hyper-v',
+    'vmware',
+    'virtualbox',
+    'loopback',
+    'tunnel',
+    'vpn',
+    'tailscale',
+    'zerotier',
+    'hamachi',
+  ];
+
+  bool _isPrivateIpv4(String ip) {
+    final parts = ip.split('.').map(int.tryParse).toList();
+    if (parts.length != 4 || parts.any((part) => part == null)) {
+      return false;
+    }
+    final values = parts.cast<int>();
+    if (values.any((part) => part < 0 || part > 255)) return false;
+    final first = values[0];
+    final second = values[1];
+    return first == 10 ||
+        (first == 172 && second >= 16 && second <= 31) ||
+        (first == 192 && second == 168);
+  }
+
+  bool _isLinkLocal(String ip) => ip.startsWith('169.254.');
+
+  int _networkRangeScore(String ip) {
+    if (ip.startsWith('192.168.')) return 30;
+    if (ip.startsWith('10.')) return 20;
+    if (ip.startsWith('172.')) return 10;
+    return 0;
+  }
+
+  bool _sameSubnet(String first, String second) {
+    final firstParts = first.split('.');
+    final secondParts = second.split('.');
+    return firstParts.length == 4 &&
+        secondParts.length == 4 &&
+        firstParts[0] == secondParts[0] &&
+        firstParts[1] == secondParts[1] &&
+        firstParts[2] == secondParts[2];
   }
 
   /// Clear scan results

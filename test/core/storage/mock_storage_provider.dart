@@ -14,7 +14,8 @@ class MockStorageProvider implements StorageProvider {
     this.profile,
     this.displayName = 'Mock',
     Set<ProviderCapability>? supportedCapabilities,
-  }) : supportedCapabilities = supportedCapabilities ?? ProviderCapability.values.toSet();
+  }) : supportedCapabilities =
+           supportedCapabilities ?? ProviderCapability.values.toSet();
 
   @override
   final ConnectionProfile? profile;
@@ -31,7 +32,8 @@ class MockStorageProvider implements StorageProvider {
   final Map<String, List<int>> _contents = {};
 
   bool _isConnected = true;
-  final StreamController<bool> _connectionController = StreamController<bool>.broadcast();
+  final StreamController<bool> _connectionController =
+      StreamController<bool>.broadcast();
 
   @override
   bool get isConnected => _isConnected;
@@ -40,7 +42,10 @@ class MockStorageProvider implements StorageProvider {
   Stream<bool> get connectionStateChanges => _connectionController.stream;
 
   /// Seed the mock filesystem with initial entries
-  void seed(Map<String, FileEntry> entries, {Map<String, List<int>>? contents}) {
+  void seed(
+    Map<String, FileEntry> entries, {
+    Map<String, List<int>>? contents,
+  }) {
     _entries.addAll(entries);
     if (contents != null) _contents.addAll(contents);
   }
@@ -68,7 +73,10 @@ class MockStorageProvider implements StorageProvider {
   @override
   Future<List<FileEntry>> list(String path, [ListOptions? options]) async {
     if (!_isConnected) {
-      throw StorageException('Not connected', code: StorageException.networkError);
+      throw StorageException(
+        'Not connected',
+        code: StorageException.networkError,
+      );
     }
 
     final normalizedPath = normalizePath(path);
@@ -94,14 +102,18 @@ class MockStorageProvider implements StorageProvider {
   }
 
   @override
-  Future<List<FileEntry>> search(String path, String query, {bool recursive = false}) async {
+  Future<List<FileEntry>> search(
+    String path,
+    String query, {
+    bool recursive = false,
+  }) async {
     final normalizedPath = normalizePath(path);
     final queryLower = query.toLowerCase();
     final result = <FileEntry>[];
 
     for (final entry in _entries.values) {
       if (entry.path == normalizedPath) continue;
-      
+
       final isChild = recursive
           ? entry.path.startsWith('$normalizedPath/')
           : dirname(entry.path) == normalizedPath;
@@ -111,7 +123,7 @@ class MockStorageProvider implements StorageProvider {
         result.add(entry);
       }
     }
-    
+
     result.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     return result;
   }
@@ -121,13 +133,20 @@ class MockStorageProvider implements StorageProvider {
     final normalizedPath = normalizePath(path);
     final entry = _entries[normalizedPath];
     if (entry == null) {
-      throw StorageException('Not found', code: StorageException.notFound, path: path);
+      throw StorageException(
+        'Not found',
+        code: StorageException.notFound,
+        path: path,
+      );
     }
     return entry;
   }
 
   @override
-  Stream<TransferProgress> read(String path, {CancelToken? cancelToken}) async* {
+  Stream<TransferProgress> read(
+    String path, {
+    CancelToken? cancelToken,
+  }) async* {
     final normalizedPath = normalizePath(path);
     final content = _contents[normalizedPath];
     if (content == null) {
@@ -162,7 +181,9 @@ class MockStorageProvider implements StorageProvider {
         return;
       }
 
-      final end = (offset + chunkSize > totalBytes) ? totalBytes : offset + chunkSize;
+      final end = (offset + chunkSize > totalBytes)
+          ? totalBytes
+          : offset + chunkSize;
       offset = end;
 
       yield TransferProgress(
@@ -270,10 +291,17 @@ class MockStorageProvider implements StorageProvider {
     final normalizedSource = normalizePath(sourcePath);
     final entry = _entries[normalizedSource];
     if (entry == null) {
-      throw StorageException('Not found', code: StorageException.notFound, path: sourcePath);
+      throw StorageException(
+        'Not found',
+        code: StorageException.notFound,
+        path: sourcePath,
+      );
     }
 
-    _entries[destPath] = entry.copyWith(path: destPath, name: basename(destPath));
+    _entries[destPath] = entry.copyWith(
+      path: destPath,
+      name: basename(destPath),
+    );
     _contents[destPath] = _contents[normalizedSource] ?? [];
     _entries.remove(normalizedSource);
     _contents.remove(normalizedSource);
@@ -294,7 +322,10 @@ class MockStorageProvider implements StorageProvider {
 
     // Remove children if directory
     final children = _entries.keys
-        .where((k) => k.startsWith('$normalizedPath/') || dirname(k) == normalizedPath)
+        .where(
+          (k) =>
+              k.startsWith('$normalizedPath/') || dirname(k) == normalizedPath,
+        )
         .toList();
     for (final child in children) {
       _entries.remove(child);
@@ -306,7 +337,11 @@ class MockStorageProvider implements StorageProvider {
   Future<void> mkdir(String path) async {
     final normalizedPath = normalizePath(path);
     if (_entries.containsKey(normalizedPath)) {
-      throw StorageException('Already exists', code: StorageException.alreadyExists, path: path);
+      throw StorageException(
+        'Already exists',
+        code: StorageException.alreadyExists,
+        path: path,
+      );
     }
     _entries[normalizedPath] = FileEntry(
       name: basename(normalizedPath),
@@ -330,9 +365,9 @@ class MockStorageProvider implements StorageProvider {
       totalBytes: 2048 * 1024 * 1024,
       usedBytes: 1024 * 1024 * 1024,
       freeBytes: 1024 * 1024 * 1024,
-      usedBytes: 1024 * 1024 * 1024,
     );
   }
+
   @override
   String normalizePath(String path) {
     if (path.isEmpty) return '/';
@@ -369,7 +404,8 @@ class MockStorageProvider implements StorageProvider {
   }
 
   @override
-  bool supports(ProviderCapability capability) => supportedCapabilities.contains(capability);
+  bool supports(ProviderCapability capability) =>
+      supportedCapabilities.contains(capability);
 
   /// Clear all entries (for test cleanup)
   void clear() {

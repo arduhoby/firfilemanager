@@ -7,7 +7,7 @@ part of 'bookmark_repository.dart';
 // **************************************************************************
 
 String _$bookmarkRepositoryHash() =>
-    r'd5e814e7bd98fa36f21578ff78112a2fb3d3f862';
+    r'cdaf31caa9952f84650e96655c4fcdd7c677563f';
 
 /// See also [BookmarkRepository].
 @ProviderFor(BookmarkRepository)

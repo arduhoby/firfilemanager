@@ -69,10 +69,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get actionOpen => 'Open';
 
   @override
-  String get actionProperties => 'Properties';
+  String get actionOpenDefault => 'Open with Default Application';
 
   @override
-  String get actionOpenWith => 'Open';
+  String get actionOpenWith => 'Open With';
+
+  @override
+  String get actionChooseApplication => 'Choose Application…';
+
+  @override
+  String get actionProperties => 'Properties';
 
   @override
   String get actionRevealInFinder => 'Reveal in Finder';
@@ -369,4 +375,230 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get emptyFolder => 'This folder is empty';
+
+  @override
+  String get progressCurrentFile => 'Current file';
+
+  @override
+  String get progressOverall => 'Overall';
+
+  @override
+  String progressRemaining(String size) {
+    return '$size remaining';
+  }
+
+  @override
+  String progressSpeed(String speed) {
+    return '$speed/s';
+  }
+
+  @override
+  String progressEta(String time) {
+    return 'ETA $time';
+  }
+
+  @override
+  String get progressEtaCalculating => 'Calculating ETA…';
+
+  @override
+  String get syncPreviewTitle => 'Smart Synchronization';
+
+  @override
+  String get syncSourcePanel => 'Selected panel';
+
+  @override
+  String get syncDestinationPanel => 'Destination panel';
+
+  @override
+  String syncSelectedSummary(int selected, int total) {
+    return '$selected of $total files selected';
+  }
+
+  @override
+  String get syncSelectChanges => 'Select differences';
+
+  @override
+  String get syncSelectAll => 'Select all';
+
+  @override
+  String get syncClearAll => 'Clear all';
+
+  @override
+  String syncStartSelected(int count) {
+    return 'Synchronize ($count)';
+  }
+
+  @override
+  String get syncColumnFile => 'File';
+
+  @override
+  String get syncColumnSize => 'Size';
+
+  @override
+  String get syncColumnModified => 'Modified';
+
+  @override
+  String get syncColumnStatus => 'Comparison';
+
+  @override
+  String get syncStatusNew => 'New';
+
+  @override
+  String get syncStatusDifferent => 'Different';
+
+  @override
+  String get syncStatusEqual => 'Equal';
+
+  @override
+  String get syncMissingDestination => 'Not present';
+
+  @override
+  String get syncNoChanges =>
+      'No differences found. The destination already matches the selected panel.';
+
+  @override
+  String syncResultSummary(int updated, int created) {
+    return 'Synchronization completed: $updated files replaced and $created new files copied.';
+  }
+
+  @override
+  String syncResultFailures(int updated, int created, int failed) {
+    return 'Synchronization finished: $updated files replaced, $created new files copied, $failed failed.';
+  }
+
+  @override
+  String get syncCancelled => 'Synchronization cancelled.';
+
+  @override
+  String get syncStatusInaccessible => 'Inaccessible';
+
+  @override
+  String get syncShowSelectedOnly => 'Selected only';
+
+  @override
+  String get syncSearchHint => 'Search files';
+
+  @override
+  String get syncSaveJob => 'Save task…';
+
+  @override
+  String get syncEditJob => 'Edit synchronization task';
+
+  @override
+  String get syncJobName => 'Task name';
+
+  @override
+  String get syncJobNameRequired => 'Enter a task name.';
+
+  @override
+  String get syncWeekdayRequired => 'Select at least one weekday.';
+
+  @override
+  String get syncSchedule => 'Schedule';
+
+  @override
+  String get syncScheduleManual => 'Manual';
+
+  @override
+  String get syncScheduleOnce => 'Once';
+
+  @override
+  String get syncScheduleDaily => 'Every day';
+
+  @override
+  String get syncScheduleWeekly => 'Every week';
+
+  @override
+  String get syncJobEnabled => 'Automation enabled';
+
+  @override
+  String get syncRequireWifi => 'Run only on Wi-Fi';
+
+  @override
+  String get syncAllowMobileData => 'Allow mobile data';
+
+  @override
+  String get syncRequireCharging => 'Run only while charging';
+
+  @override
+  String get weekdayMonday => 'Mon';
+
+  @override
+  String get weekdayTuesday => 'Tue';
+
+  @override
+  String get weekdayWednesday => 'Wed';
+
+  @override
+  String get weekdayThursday => 'Thu';
+
+  @override
+  String get weekdayFriday => 'Fri';
+
+  @override
+  String get weekdaySaturday => 'Sat';
+
+  @override
+  String get weekdaySunday => 'Sun';
+
+  @override
+  String syncJobSaved(String name) {
+    return '\"$name\" was saved.';
+  }
+
+  @override
+  String syncJobNameConflict(String name) {
+    return 'A task named \"$name\" already exists.';
+  }
+
+  @override
+  String get syncJobsTitle => 'Fir SmartSync';
+
+  @override
+  String get syncJobsSubtitle => 'Saved synchronization tasks';
+
+  @override
+  String get syncJobsEmpty => 'No synchronization tasks have been saved.';
+
+  @override
+  String get syncJobsEmptyHint =>
+      'Open synchronization from a file panel, choose the files, then select Save task.';
+
+  @override
+  String syncRunSucceeded(int updated, int created) {
+    return 'Synchronization completed: $updated updated, $created created.';
+  }
+
+  @override
+  String syncRunFailed(int failed) {
+    return 'Synchronization failed for $failed files.';
+  }
+
+  @override
+  String get syncDeleteJob => 'Delete synchronization task';
+
+  @override
+  String syncDeleteJobConfirm(String name) {
+    return 'Delete \"$name\" and its schedule?';
+  }
+
+  @override
+  String syncHistoryFor(String name) {
+    return '$name history';
+  }
+
+  @override
+  String get syncHistoryEmpty => 'No runs have been recorded.';
+
+  @override
+  String get syncFailedLabel => 'Failed';
+
+  @override
+  String get syncFailureDetails => 'Failure details';
+
+  @override
+  String get syncRunNow => 'Run now';
+
+  @override
+  String get syncHistory => 'History';
 }

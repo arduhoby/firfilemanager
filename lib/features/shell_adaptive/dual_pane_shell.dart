@@ -4,12 +4,13 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:audioplayers/audioplayers.dart' as audioplayers;
+import 'package:filesize/filesize.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/settings/settings_provider.dart';
 
 import 'package:go_router/go_router.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/persistence/app_preferences.dart';
 
 import '../../l10n/generated/app_localizations.dart' as gen;
 import '../../core/storage/models/transfer_progress.dart';
@@ -40,13 +41,13 @@ class _PanelSplitRatioNotifier extends StateNotifier<double> {
   }
 
   Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferences.getInstance();
     state = (prefs.getDouble(_key) ?? 0.5).clamp(0.2, 0.8);
   }
 
   Future<void> set(double ratio) async {
     state = ratio.clamp(0.2, 0.8);
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferences.getInstance();
     await prefs.setDouble(_key, state);
   }
 }
@@ -79,17 +80,17 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
     final clipboard = ref.watch(fileClipboardProvider);
 
     ref.listen<TransferProgress?>(operationProgressProvider, (previous, next) {
-      if (previous?.state != TransferState.completed && next?.state == TransferState.completed) {
+      // Providers may report completion for nested folders as well. Only the
+      // operation-level completion (the final item count) should make a sound.
+      final isOperationComplete =
+          next?.state == TransferState.completed &&
+          (next?.totalFiles ?? 0) > 0 &&
+          (next?.filesTransferred ?? 0) >= (next?.totalFiles ?? 0);
+      if (previous?.state != TransferState.completed && isOperationComplete) {
         if (ref.read(settingsProvider).playAnimationSounds) {
-          final player1 = audioplayers.AudioPlayer();
-          player1.play(audioplayers.AssetSource('sounds/success.wav'));
-          player1.onPlayerComplete.listen((_) => player1.dispose());
-
-          Future.delayed(const Duration(milliseconds: 200), () {
-            final player2 = audioplayers.AudioPlayer();
-            player2.play(audioplayers.AssetSource('sounds/success.wav'));
-            player2.onPlayerComplete.listen((_) => player2.dispose());
-          });
+          final player = audioplayers.AudioPlayer();
+          player.play(audioplayers.AssetSource('sounds/success.wav'));
+          player.onPlayerComplete.listen((_) => player.dispose());
         }
       }
     });
@@ -147,7 +148,10 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
           ),
           SwitchPanelIntent: CallbackAction<SwitchPanelIntent>(
             onInvoke: (_) {
-              final active = ref.read(activePanelProvider); ref.read(activePanelProvider.notifier).setActive(active == PanelSide.a ? PanelSide.b : PanelSide.a);
+              final active = ref.read(activePanelProvider);
+              ref
+                  .read(activePanelProvider.notifier)
+                  .setActive(active == PanelSide.a ? PanelSide.b : PanelSide.a);
               return null;
             },
           ),
@@ -235,9 +239,15 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
                             children: [
                               Expanded(
                                 child: Padding(
-                                  padding: const EdgeInsets.fromLTRB(4, 4, 4, 1),
+                                  padding: const EdgeInsets.fromLTRB(
+                                    4,
+                                    4,
+                                    4,
+                                    1,
+                                  ),
                                   child:
-                                      (GoRouterState.of(context).uri.path == '/' ||
+                                      (GoRouterState.of(context).uri.path ==
+                                              '/' ||
                                           GoRouterState.of(
                                             context,
                                           ).uri.path.startsWith('/connections'))
@@ -245,7 +255,12 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
                                       : widget.child,
                                 ),
                               ),
-                              _buildFunctionBar(context, l10n, activeSide, clipboard),
+                              _buildFunctionBar(
+                                context,
+                                l10n,
+                                activeSide,
+                                clipboard,
+                              ),
                             ],
                           ),
                         ),
@@ -285,8 +300,9 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
         ),
         // Semi-transparent overlay so UI text stays readable
         Container(
-          color: (isDark ? Colors.black : Colors.white)
-              .withValues(alpha: settings.backgroundOpacity),
+          color: (isDark ? Colors.black : Colors.white).withValues(
+            alpha: settings.backgroundOpacity,
+          ),
         ),
       ],
     );
@@ -394,7 +410,9 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
         icon: Icons.computer_outlined,
         color: theme.colorScheme.primary,
         onTap: () {
-          ref.read(panelControllerProvider.notifier).navigate(activeSide, '/', providerId: 'local');
+          ref
+              .read(panelControllerProvider.notifier)
+              .navigate(activeSide, '/', providerId: 'local');
         },
       ),
     );
@@ -567,7 +585,12 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
     }
 
     return Container(
-      margin: const EdgeInsets.fromLTRB(4.0, 1.0, 4.0, 14.0), // 1px space from panel, 5mm from bottom edge, aligned with panels on left/right
+      margin: const EdgeInsets.fromLTRB(
+        4.0,
+        1.0,
+        4.0,
+        14.0,
+      ), // 1px space from panel, 5mm from bottom edge, aligned with panels on left/right
       child: ClipRRect(
         borderRadius: BorderRadius.circular(18),
         child: BackdropFilter(
@@ -587,91 +610,98 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
               ),
             ),
             child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                actionButton(
-                  icon: Icons.create_new_folder_outlined,
-                  label: l10n.actionNewFolder,
-                  onPressed: () =>
-                      actions.showNewFolderDialog(context, activeSide),
-                ),
-                const SizedBox(width: 2),
-                actionButton(
-                  icon: Icons.copy_outlined,
-                  label: 'F5 ${l10n.actionCopy}',
-                  onPressed: hasSelection
-                      ? () => actions.copyToOtherPanel(context, activeSide)
-                      : null,
-                ),
-                const SizedBox(width: 2),
-                actionButton(
-                  icon: Icons.drive_file_move_outline,
-                  label: 'F6 ${l10n.actionMove}',
-                  onPressed: hasSelection
-                      ? () => actions.moveToOtherPanel(context, activeSide)
-                      : null,
-                ),
-                const SizedBox(width: 2),
-                actionButton(
-                  icon: Icons.edit_outlined,
-                  label: l10n.actionRename,
-                  onPressed: hasSelection && activeState.activeTab.selectionCount == 1
-                      ? () => actions.showRenameDialog(
-                          context,
-                          activeSide,
-                          activeState.activeTab.selectedEntries.first,
-                        )
-                      : null,
-                ),
-                const SizedBox(width: 2),
-                actionButton(
-                  icon: Icons.delete_outline,
-                  label: 'F8 ${l10n.actionDelete}',
-                  onPressed: hasSelection
-                      ? () => actions.showDeleteDialog(
-                          context,
-                          activeSide,
-                          activeState.activeTab.selectedEntries,
-                        )
-                      : null,
-                  color: hasSelection
-                      ? Colors.red.withValues(alpha: 0.8)
-                      : null,
-                ),
-                actionButton(
-                  icon: Icons.content_paste,
-                  label: l10n.actionPaste,
-                  onPressed: clipboard == null || clipboard.sourcePaths.isEmpty
-                      ? null
-                      : () => actions.paste(context, activeSide),
-                ),
-                const SizedBox(width: 2),
-                actionButton(
-                  icon: Icons.sync,
-                  label: 'Sync',
-                  onPressed: () => actions.syncPanels(context, activeSide),
-                ),
-                const SizedBox(width: 16),
-                if (!(clipboard == null)) ...[
-                  Icon(Icons.paste, size: 12, color: theme.colorScheme.primary),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${clipboard.sourcePaths.length} ${clipboard.operation == ClipboardOperation.copy ? l10n.actionCopy : l10n.actionMove}',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.primary,
-                      fontSize: 11,
-                    ),
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  actionButton(
+                    icon: Icons.create_new_folder_outlined,
+                    label: l10n.actionNewFolder,
+                    onPressed: () =>
+                        actions.showNewFolderDialog(context, activeSide),
                   ),
+                  const SizedBox(width: 2),
+                  actionButton(
+                    icon: Icons.copy_outlined,
+                    label: 'F5 ${l10n.actionCopy}',
+                    onPressed: hasSelection
+                        ? () => actions.copyToOtherPanel(context, activeSide)
+                        : null,
+                  ),
+                  const SizedBox(width: 2),
+                  actionButton(
+                    icon: Icons.drive_file_move_outline,
+                    label: 'F6 ${l10n.actionMove}',
+                    onPressed: hasSelection
+                        ? () => actions.moveToOtherPanel(context, activeSide)
+                        : null,
+                  ),
+                  const SizedBox(width: 2),
+                  actionButton(
+                    icon: Icons.edit_outlined,
+                    label: l10n.actionRename,
+                    onPressed:
+                        hasSelection &&
+                            activeState.activeTab.selectionCount == 1
+                        ? () => actions.showRenameDialog(
+                            context,
+                            activeSide,
+                            activeState.activeTab.selectedEntries.first,
+                          )
+                        : null,
+                  ),
+                  const SizedBox(width: 2),
+                  actionButton(
+                    icon: Icons.delete_outline,
+                    label: 'F8 ${l10n.actionDelete}',
+                    onPressed: hasSelection
+                        ? () => actions.showDeleteDialog(
+                            context,
+                            activeSide,
+                            activeState.activeTab.selectedEntries,
+                          )
+                        : null,
+                    color: hasSelection
+                        ? Colors.red.withValues(alpha: 0.8)
+                        : null,
+                  ),
+                  actionButton(
+                    icon: Icons.content_paste,
+                    label: l10n.actionPaste,
+                    onPressed:
+                        clipboard == null || clipboard.sourcePaths.isEmpty
+                        ? null
+                        : () => actions.paste(context, activeSide),
+                  ),
+                  const SizedBox(width: 2),
+                  actionButton(
+                    icon: Icons.sync,
+                    label: 'Sync',
+                    onPressed: () => actions.syncPanels(context, activeSide),
+                  ),
+                  const SizedBox(width: 16),
+                  if (!(clipboard == null)) ...[
+                    Icon(
+                      Icons.paste,
+                      size: 12,
+                      color: theme.colorScheme.primary,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${clipboard.sourcePaths.length} ${clipboard.operation == ClipboardOperation.copy ? l10n.actionCopy : l10n.actionMove}',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   Widget _buildProgressBar(BuildContext context, TransferProgress progress) {
     if (progress.isFinished) {
@@ -683,8 +713,16 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
     }
 
     final l10n = gen.AppLocalizations.of(context)!;
-    final percent = progress.percent;
     final theme = Theme.of(context);
+    final isTransfer =
+        progress.operation == TransferOperation.copy ||
+        progress.operation == TransferOperation.move ||
+        progress.operation == TransferOperation.delete ||
+        progress.operation == TransferOperation.sync;
+    final overallValue = progress.overallFraction ?? progress.fileFraction;
+    final overallPercent = overallValue == null
+        ? null
+        : (overallValue * 100).round();
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
@@ -697,14 +735,14 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.2),
+            color: Colors.black.withValues(alpha: 0.2),
             blurRadius: 16,
             spreadRadius: 2,
             offset: const Offset(0, 4),
-          )
+          ),
         ],
         border: Border.all(
-          color: theme.colorScheme.primary.withOpacity(0.3),
+          color: theme.colorScheme.primary.withValues(alpha: 0.3),
           width: 1,
         ),
       ),
@@ -728,23 +766,30 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
                             height: 24,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: (progress.operation == TransferOperation.zip || progress.operation == TransferOperation.unzip)
+                              color:
+                                  (progress.operation ==
+                                          TransferOperation.zip ||
+                                      progress.operation ==
+                                          TransferOperation.unzip)
                                   ? Colors.orange
                                   : theme.colorScheme.primary,
                             ),
                           ),
                           Icon(
-                            progress.operation == TransferOperation.copy 
-                                ? Icons.copy 
-                                : progress.operation == TransferOperation.move 
-                                    ? Icons.drive_file_move 
-                                    : progress.operation == TransferOperation.zip
-                                        ? Icons.folder_zip_outlined
-                                        : progress.operation == TransferOperation.unzip
-                                            ? Icons.unarchive_outlined
-                                            : Icons.sync,
+                            progress.operation == TransferOperation.copy
+                                ? Icons.copy
+                                : progress.operation == TransferOperation.move
+                                ? Icons.drive_file_move
+                                : progress.operation == TransferOperation.zip
+                                ? Icons.folder_zip_outlined
+                                : progress.operation == TransferOperation.unzip
+                                ? Icons.unarchive_outlined
+                                : Icons.sync,
                             size: 12,
-                            color: (progress.operation == TransferOperation.zip || progress.operation == TransferOperation.unzip)
+                            color:
+                                (progress.operation == TransferOperation.zip ||
+                                    progress.operation ==
+                                        TransferOperation.unzip)
                                 ? Colors.orange
                                 : theme.colorScheme.primary,
                           ),
@@ -757,7 +802,11 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
                         color: Colors.green.shade400,
                       )
                     else if (progress.state == TransferState.failed)
-                      Icon(Icons.error, size: 24, color: theme.colorScheme.error)
+                      Icon(
+                        Icons.error,
+                        size: 24,
+                        color: theme.colorScheme.error,
+                      )
                     else if (progress.state == TransferState.cancelled)
                       Icon(
                         Icons.cancel,
@@ -771,18 +820,30 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
                         children: [
                           Text(
                             switch (progress.operation) {
-                              TransferOperation.copy => l10n.operationCopying(progress.totalFiles),
-                              TransferOperation.move => l10n.operationMoving(progress.totalFiles),
-                              TransferOperation.delete => l10n.operationDeleting(progress.totalFiles),
-                              TransferOperation.zip => '${progress.filesTransferred}/${progress.totalFiles} öğe sıkıştırılıyor...',
-                              TransferOperation.unzip => '${progress.filesTransferred} öğe arşivden çıkarılıyor...',
-                              TransferOperation.sync => 'Senkronize ediliyor...',
+                              TransferOperation.copy => l10n.operationCopying(
+                                progress.totalFiles,
+                              ),
+                              TransferOperation.move => l10n.operationMoving(
+                                progress.totalFiles,
+                              ),
+                              TransferOperation.delete =>
+                                l10n.operationDeleting(progress.totalFiles),
+                              TransferOperation.zip =>
+                                '${progress.filesTransferred}/${progress.totalFiles} öğe sıkıştırılıyor...',
+                              TransferOperation.unzip =>
+                                '${progress.filesTransferred} öğe arşivden çıkarılıyor...',
+                              TransferOperation.sync =>
+                                'Senkronize ediliyor...',
                               TransferOperation.read => 'Okunuyor...',
                               TransferOperation.write => 'Yazılıyor...',
                             },
                             style: theme.textTheme.titleSmall?.copyWith(
                               fontWeight: FontWeight.bold,
-                              color: (progress.operation == TransferOperation.zip || progress.operation == TransferOperation.unzip)
+                              color:
+                                  (progress.operation ==
+                                          TransferOperation.zip ||
+                                      progress.operation ==
+                                          TransferOperation.unzip)
                                   ? Colors.orange
                                   : null,
                             ),
@@ -799,10 +860,10 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
                         ],
                       ),
                     ),
-                    if (percent != null) ...[
+                    if (overallPercent != null) ...[
                       const SizedBox(width: 16),
                       Text(
-                        '$percent%',
+                        '$overallPercent%',
                         style: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
                           color: theme.colorScheme.primary,
@@ -815,21 +876,85 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
                         icon: const Icon(Icons.close, size: 20),
                         tooltip: l10n.actionCancel,
                         onPressed: () {
-                          ref.read(fileOperationsServiceProvider.notifier).cancelOperation();
+                          ref
+                              .read(fileOperationsServiceProvider.notifier)
+                              .cancelOperation();
                         },
                       ),
                     ],
                   ],
                 ),
-                if (progress.state == TransferState.inProgress && percent != null) ...[
+                if (isTransfer) ...[
+                  const SizedBox(height: 14),
+                  _buildProgressStage(
+                    context: context,
+                    title: l10n.progressCurrentFile,
+                    details:
+                        '${filesize(progress.bytesTransferred)} / '
+                        '${filesize(progress.totalBytes)} • '
+                        '${l10n.progressRemaining(filesize(progress.currentFileRemainingBytes))}',
+                    value: progress.currentFileFraction,
+                    color: const Color(0xFF22C7C9),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildProgressStage(
+                    context: context,
+                    title: l10n.progressOverall,
+                    details:
+                        '${filesize(progress.overallBytesTransferred)} / '
+                        '${filesize(progress.overallTotalBytes)} • '
+                        '${l10n.progressRemaining(filesize(progress.overallRemainingBytes))}',
+                    value: overallValue,
+                    color: theme.colorScheme.primary,
+                  ),
+                  if (progress.state == TransferState.inProgress) ...[
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.speed,
+                          size: 14,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          l10n.progressSpeed(filesize(progress.speed.round())),
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const Spacer(),
+                        Icon(
+                          Icons.schedule,
+                          size: 14,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          progress.estimatedRemaining == null
+                              ? l10n.progressEtaCalculating
+                              : l10n.progressEta(
+                                  _formatEta(progress.estimatedRemaining!),
+                                ),
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ] else if (progress.fraction != null) ...[
                   const SizedBox(height: 12),
                   ClipRRect(
                     borderRadius: BorderRadius.circular(4),
                     child: LinearProgressIndicator(
-                      value: percent / 100,
+                      value: progress.fraction,
                       minHeight: 6,
-                      backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                      valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary),
+                      backgroundColor:
+                          theme.colorScheme.surfaceContainerHighest,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        theme.colorScheme.primary,
+                      ),
                     ),
                   ),
                 ],
@@ -839,6 +964,66 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
         ),
       ),
     );
+  }
+
+  Widget _buildProgressStage({
+    required BuildContext context,
+    required String title,
+    required String details,
+    required double? value,
+    required Color color,
+  }) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              title,
+              style: theme.textTheme.labelMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                details,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.end,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 5),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(5),
+          child: LinearProgressIndicator(
+            value: value,
+            minHeight: 8,
+            backgroundColor: theme.colorScheme.surfaceContainerHighest,
+            valueColor: AlwaysStoppedAnimation<Color>(color),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatEta(Duration duration) {
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    final seconds = duration.inSeconds.remainder(60);
+    if (hours > 0) {
+      return '${hours.toString().padLeft(2, '0')}:'
+          '${minutes.toString().padLeft(2, '0')}:'
+          '${seconds.toString().padLeft(2, '0')}';
+    }
+    return '${minutes.toString().padLeft(2, '0')}:'
+        '${seconds.toString().padLeft(2, '0')}';
   }
 
   String _shortenPath(String path, int maxLen) {
@@ -1068,22 +1253,22 @@ class _UiverseActionButtonState extends State<_UiverseActionButton> {
   Widget build(BuildContext context) {
     final active = widget.onPressed != null;
     final isDark = widget.theme.brightness == Brightness.dark;
-    final turquoise = isDark ? const Color(0xFF00E5FF) : const Color(0xFF00838F);
+    final turquoise = isDark
+        ? const Color(0xFF00E5FF)
+        : const Color(0xFF00838F);
     final btnColor = widget.color ?? turquoise;
 
     // Default (not hovered) backgrounds: light mode = white, dark mode = black
     final defaultBgColor = isDark ? Colors.black : Colors.white;
 
     // Hover durumunda doluluk rengi (turkuaz), değilse tema rengi (siyah/beyaz)
-    final bgColor = active 
+    final bgColor = active
         ? (_isHovered ? btnColor : defaultBgColor)
         : Colors.transparent;
 
     // Hover durumunda yazının/ikonun rengi zıt renge dönsün, değilse turkuaz
     final contentColor = active
-        ? (_isHovered 
-            ? (isDark ? Colors.black : Colors.white) 
-            : btnColor)
+        ? (_isHovered ? (isDark ? Colors.black : Colors.white) : btnColor)
         : widget.theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4);
 
     return Tooltip(
@@ -1108,16 +1293,24 @@ class _UiverseActionButtonState extends State<_UiverseActionButton> {
                 color: bgColor,
                 borderRadius: BorderRadius.circular(11),
                 border: Border.all(
-                  color: active ? btnColor : widget.theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.2),
+                  color: active
+                      ? btnColor
+                      : widget.theme.colorScheme.onSurfaceVariant.withValues(
+                          alpha: 0.2,
+                        ),
                   width: 2.0,
                 ),
-                boxShadow: active ? [
-                  BoxShadow(
-                    color: const Color(0xFF0A192F).withValues(alpha: 0.4), // Koyu lacivert gölge
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
-                  )
-                ] : null,
+                boxShadow: active
+                    ? [
+                        BoxShadow(
+                          color: const Color(
+                            0xFF0A192F,
+                          ).withValues(alpha: 0.4), // Koyu lacivert gölge
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ]
+                    : null,
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -1126,12 +1319,11 @@ class _UiverseActionButtonState extends State<_UiverseActionButton> {
                   AnimatedPadding(
                     duration: const Duration(milliseconds: 300),
                     curve: Curves.easeOutCubic,
-                    padding: EdgeInsets.only(left: _isHovered ? 4.0 : 0.0, right: _isHovered ? 0.0 : 4.0),
-                    child: Icon(
-                      widget.icon,
-                      size: 13,
-                      color: contentColor,
+                    padding: EdgeInsets.only(
+                      left: _isHovered ? 4.0 : 0.0,
+                      right: _isHovered ? 0.0 : 4.0,
                     ),
+                    child: Icon(widget.icon, size: 13, color: contentColor),
                   ),
                   Text(
                     widget.label,

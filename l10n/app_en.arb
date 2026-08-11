@@ -45,10 +45,14 @@
   "@actionRefresh": {},
   "actionOpen": "Open",
   "@actionOpen": {},
+  "actionOpenDefault": "Open with Default Application",
+  "@actionOpenDefault": {},
+  "actionOpenWith": "Open With",
+  "@actionOpenWith": {},
+  "actionChooseApplication": "Choose Application…",
+  "@actionChooseApplication": {},
   "actionProperties": "Properties",
   "@actionProperties": {},
-  "actionOpenWith": "Open",
-  "@actionOpenWith": {},
   "actionRevealInFinder": "Reveal in Finder",
   "@actionRevealInFinder": {},
   "actionCompress": "Compress",
@@ -292,5 +296,149 @@
     }
   },
   "emptyFolder": "This folder is empty",
-  "@emptyFolder": {}
+  "@emptyFolder": {},
+  "progressCurrentFile": "Current file",
+  "@progressCurrentFile": {},
+  "progressOverall": "Overall",
+  "@progressOverall": {},
+  "progressRemaining": "{size} remaining",
+  "@progressRemaining": {
+    "placeholders": {
+      "size": { "type": "String" }
+    }
+  },
+  "progressSpeed": "{speed}/s",
+  "@progressSpeed": {
+    "placeholders": {
+      "speed": { "type": "String" }
+    }
+  },
+  "progressEta": "ETA {time}",
+  "@progressEta": {
+    "placeholders": {
+      "time": { "type": "String" }
+    }
+  },
+  "progressEtaCalculating": "Calculating ETA…",
+  "@progressEtaCalculating": {},
+  "syncPreviewTitle": "Smart Synchronization",
+  "@syncPreviewTitle": {},
+  "syncSourcePanel": "Selected panel",
+  "@syncSourcePanel": {},
+  "syncDestinationPanel": "Destination panel",
+  "@syncDestinationPanel": {},
+  "syncSelectedSummary": "{selected} of {total} files selected",
+  "@syncSelectedSummary": {
+    "placeholders": {
+      "selected": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "syncSelectChanges": "Select differences",
+  "@syncSelectChanges": {},
+  "syncSelectAll": "Select all",
+  "@syncSelectAll": {},
+  "syncClearAll": "Clear all",
+  "@syncClearAll": {},
+  "syncStartSelected": "Synchronize ({count})",
+  "@syncStartSelected": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "syncColumnFile": "File",
+  "@syncColumnFile": {},
+  "syncColumnSize": "Size",
+  "@syncColumnSize": {},
+  "syncColumnModified": "Modified",
+  "@syncColumnModified": {},
+  "syncColumnStatus": "Comparison",
+  "@syncColumnStatus": {},
+  "syncStatusNew": "New",
+  "@syncStatusNew": {},
+  "syncStatusDifferent": "Different",
+  "@syncStatusDifferent": {},
+  "syncStatusEqual": "Equal",
+  "@syncStatusEqual": {},
+  "syncMissingDestination": "Not present",
+  "@syncMissingDestination": {},
+  "syncNoChanges": "No differences found. The destination already matches the selected panel.",
+  "@syncNoChanges": {},
+  "syncResultSummary": "Synchronization completed: {updated} files replaced and {created} new files copied.",
+  "@syncResultSummary": {
+    "placeholders": {
+      "updated": { "type": "int" },
+      "created": { "type": "int" }
+    }
+  },
+  "syncResultFailures": "Synchronization finished: {updated} files replaced, {created} new files copied, {failed} failed.",
+  "@syncResultFailures": {
+    "placeholders": {
+      "updated": { "type": "int" },
+      "created": { "type": "int" },
+      "failed": { "type": "int" }
+    }
+  },
+  "syncCancelled": "Synchronization cancelled.",
+  "syncStatusInaccessible": "Inaccessible",
+  "syncShowSelectedOnly": "Selected only",
+  "syncSearchHint": "Search files",
+  "syncSaveJob": "Save task…",
+  "syncEditJob": "Edit synchronization task",
+  "syncJobName": "Task name",
+  "syncJobNameRequired": "Enter a task name.",
+  "syncWeekdayRequired": "Select at least one weekday.",
+  "syncSchedule": "Schedule",
+  "syncScheduleManual": "Manual",
+  "syncScheduleOnce": "Once",
+  "syncScheduleDaily": "Every day",
+  "syncScheduleWeekly": "Every week",
+  "syncJobEnabled": "Automation enabled",
+  "syncRequireWifi": "Run only on Wi-Fi",
+  "syncAllowMobileData": "Allow mobile data",
+  "syncRequireCharging": "Run only while charging",
+  "weekdayMonday": "Mon",
+  "weekdayTuesday": "Tue",
+  "weekdayWednesday": "Wed",
+  "weekdayThursday": "Thu",
+  "weekdayFriday": "Fri",
+  "weekdaySaturday": "Sat",
+  "weekdaySunday": "Sun",
+  "syncJobSaved": "\"{name}\" was saved.",
+  "@syncJobSaved": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+  "syncJobNameConflict": "A task named \"{name}\" already exists.",
+  "@syncJobNameConflict": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+  "syncJobsTitle": "Fir SmartSync",
+  "syncJobsSubtitle": "Saved synchronization tasks",
+  "syncJobsEmpty": "No synchronization tasks have been saved.",
+  "syncJobsEmptyHint": "Open synchronization from a file panel, choose the files, then select Save task.",
+  "syncRunSucceeded": "Synchronization completed: {updated} updated, {created} created.",
+  "@syncRunSucceeded": {
+    "placeholders": {
+      "updated": { "type": "int" },
+      "created": { "type": "int" }
+    }
+  },
+  "syncRunFailed": "Synchronization failed for {failed} files.",
+  "@syncRunFailed": {
+    "placeholders": { "failed": { "type": "int" } }
+  },
+  "syncDeleteJob": "Delete synchronization task",
+  "syncDeleteJobConfirm": "Delete \"{name}\" and its schedule?",
+  "@syncDeleteJobConfirm": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+  "syncHistoryFor": "{name} history",
+  "@syncHistoryFor": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+  "syncHistoryEmpty": "No runs have been recorded.",
+  "syncFailedLabel": "Failed",
+  "syncFailureDetails": "Failure details",
+  "syncRunNow": "Run now",
+  "syncHistory": "History"
 }

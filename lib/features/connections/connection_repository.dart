@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -21,80 +22,96 @@ class ConnectionRepository extends _$ConnectionRepository {
   final _secureStorage = const FlutterSecureStorage(
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
   );
+  final Completer<void> _loaded = Completer<void>();
 
   @override
   List<ConnectionProfile> build() {
-    _loadConnections();
+    unawaited(_loadConnections());
     return [];
   }
+
+  Future<void> get loaded => _loaded.future;
 
   Future<void> _loadConnections() async {
     try {
       final json = await _secureStorage.read(key: 'connections');
       if (json != null) {
-        final list = jsonDecode(json) as List;
+        final list = (jsonDecode(json) as List)
+            .whereType<Map<Object?, Object?>>()
+            .map(Map<String, dynamic>.from);
         state = list
-            .map((e) => ConnectionProfile(
-                  id: e['id'] as String,
-                  name: e['name'] as String,
-                  type: ConnectionType.values.firstWhere(
-                    (t) => t.name == e['type'],
-                    orElse: () => ConnectionType.sftp,
-                  ),
-                  host: e['host'] as String?,
-                  port: e['port'] as int?,
-                  username: e['username'] as String?,
-                  authMethod: AuthMethod.values.firstWhere(
-                    (a) => a.name == e['authMethod'],
-                    orElse: () => AuthMethod.password,
-                  ),
-                  defaultPath: e['defaultPath'] as String? ?? '/',
-                  autoConnect: e['autoConnect'] as bool? ?? false,
-                ))
+            .map(
+              (e) => ConnectionProfile(
+                id: e['id'] as String,
+                name: e['name'] as String,
+                type: ConnectionType.values.firstWhere(
+                  (t) => t.name == e['type'],
+                  orElse: () => ConnectionType.sftp,
+                ),
+                host: e['host'] as String?,
+                port: e['port'] as int?,
+                username: e['username'] as String?,
+                authMethod: AuthMethod.values.firstWhere(
+                  (a) => a.name == e['authMethod'],
+                  orElse: () => AuthMethod.password,
+                ),
+                defaultPath: e['defaultPath'] as String? ?? '/',
+                autoConnect: e['autoConnect'] as bool? ?? false,
+              ),
+            )
             .toList();
 
-        // Trigger auto connect for profiles marked as autoConnect
-        Future.microtask(() async {
-          final registry = ref.read(storageProviderRegistryProvider.notifier);
-          for (final profile in state) {
-            if (profile.autoConnect) {
-              try {
-                final password = await getPassword(profile.id);
-                final key = await getPrivateKey(profile.id);
-                final clientId = await getClientId(profile.id);
-                final clientSecret = await getClientSecret(profile.id);
-                await registry.getOrCreate(
-                  profile,
-                  password: password,
-                  privateKey: key,
-                  clientId: clientId,
-                  clientSecret: clientSecret,
-                );
-              } catch (_) {
-                // Ignore auto connect errors silently
+        unawaited(
+          Future.microtask(() async {
+            final registry = ref.read(storageProviderRegistryProvider.notifier);
+            for (final profile in state) {
+              if (profile.autoConnect) {
+                try {
+                  final password = await getPassword(profile.id);
+                  final key = await getPrivateKey(profile.id);
+                  final clientId = await getClientId(profile.id);
+                  final clientSecret = await getClientSecret(profile.id);
+                  await registry.getOrCreate(
+                    profile,
+                    password: password,
+                    privateKey: key,
+                    clientId: clientId,
+                    clientSecret: clientSecret,
+                  );
+                } catch (_) {
+                  // A saved profile stays available when auto-connect fails.
+                }
               }
             }
-          }
-        });
+          }),
+        );
       }
     } catch (_) {
-      // Start with empty list on error
+      state = const [];
+    } finally {
+      if (!_loaded.isCompleted) _loaded.complete();
     }
   }
 
   Future<void> saveConnections() async {
     try {
-      final json = jsonEncode(state.map((p) => {
-            'id': p.id,
-            'name': p.name,
-            'type': p.type.name,
-            'host': p.host,
-            'port': p.port,
-            'username': p.username,
-            'authMethod': p.authMethod.name,
-            'defaultPath': p.defaultPath,
-            'autoConnect': p.autoConnect,
-          }).toList());
+      final json = jsonEncode(
+        state
+            .map(
+              (p) => {
+                'id': p.id,
+                'name': p.name,
+                'type': p.type.name,
+                'host': p.host,
+                'port': p.port,
+                'username': p.username,
+                'authMethod': p.authMethod.name,
+                'defaultPath': p.defaultPath,
+                'autoConnect': p.autoConnect,
+              },
+            )
+            .toList(),
+      );
       await _secureStorage.write(key: 'connections', value: json);
     } catch (e) {
       // Ignore storage errors — connections stay in memory
@@ -103,7 +120,7 @@ class ConnectionRepository extends _$ConnectionRepository {
 
   // Memory fallback map
   final _memoryCredentials = <String, String>{};
-  
+
   Future<File> _getFallbackFile() async {
     final dir = await getApplicationSupportDirectory();
     return File(p.join(dir.path, 'credentials_fallback.json'));
@@ -116,7 +133,7 @@ class ConnectionRepository extends _$ConnectionRepository {
     } catch (_) {
       try {
         final file = await _getFallbackFile();
-        final Map<String, dynamic> data = file.existsSync() 
+        final Map<String, dynamic> data = file.existsSync()
             ? jsonDecode(file.readAsStringSync()) as Map<String, dynamic>
             : {};
         data[key] = value;
@@ -136,11 +153,12 @@ class ConnectionRepository extends _$ConnectionRepository {
         return val;
       }
     } catch (_) {}
-    
+
     try {
       final file = await _getFallbackFile();
       if (file.existsSync()) {
-        final Map<String, dynamic> data = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
+        final Map<String, dynamic> data =
+            jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
         if (data.containsKey(key)) {
           final val = data[key] as String?;
           if (val != null) {
@@ -161,7 +179,8 @@ class ConnectionRepository extends _$ConnectionRepository {
     try {
       final file = await _getFallbackFile();
       if (file.existsSync()) {
-        final Map<String, dynamic> data = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
+        final Map<String, dynamic> data =
+            jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
         data.remove(key);
         file.writeAsStringSync(jsonEncode(data));
       }
@@ -169,7 +188,8 @@ class ConnectionRepository extends _$ConnectionRepository {
   }
 
   /// Add a new connection profile
-  Future<void> addConnection(ConnectionProfile profile, {
+  Future<void> addConnection(
+    ConnectionProfile profile, {
     String? password,
     String? privateKey,
     String? clientId,
@@ -188,12 +208,16 @@ class ConnectionRepository extends _$ConnectionRepository {
       await _writeCredential('${profile.credentialKey}_client_id', clientId);
     }
     if (clientSecret != null && clientSecret.isNotEmpty) {
-      await _writeCredential('${profile.credentialKey}_client_secret', clientSecret);
+      await _writeCredential(
+        '${profile.credentialKey}_client_secret',
+        clientSecret,
+      );
     }
   }
 
   /// Update an existing connection profile
-  Future<void> updateConnection(ConnectionProfile profile, {
+  Future<void> updateConnection(
+    ConnectionProfile profile, {
     String? password,
     String? privateKey,
     String? clientId,
@@ -212,7 +236,10 @@ class ConnectionRepository extends _$ConnectionRepository {
       await _writeCredential('${profile.credentialKey}_client_id', clientId);
     }
     if (clientSecret != null) {
-      await _writeCredential('${profile.credentialKey}_client_secret', clientSecret);
+      await _writeCredential(
+        '${profile.credentialKey}_client_secret',
+        clientSecret,
+      );
     }
   }
 

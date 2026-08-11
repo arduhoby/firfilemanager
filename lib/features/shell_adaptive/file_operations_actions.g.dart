@@ -7,7 +7,7 @@ part of 'file_operations_actions.dart';
 // **************************************************************************
 
 String _$fileOperationsActionsHash() =>
-    r'3a779e277b56035d9dfc436f172835c6f2dbcba2';
+    r'06c0edda2ba5e6a8cda59aff851bba38d25dbe9e';
 
 /// Actions provider that bridges UI interactions (context menu, dialogs)
 /// with the [FileOperationsService].

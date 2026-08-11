@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:riverpod_annotation/riverpod_annotation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../persistence/app_preferences.dart';
 
 part 'recent_service.g.dart';
 
@@ -21,7 +21,7 @@ class RecentService extends _$RecentService {
   }
 
   Future<void> _loadRecents() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferences.getInstance();
     final apps = prefs.getStringList(_kRecentAppsKey) ?? [];
     final folders = prefs.getStringList(_kRecentFoldersKey) ?? [];
     final files = prefs.getStringList(_kRecentFilesKey) ?? [];
@@ -37,7 +37,7 @@ class RecentService extends _$RecentService {
   Future<void> addRecentApp(String path) async {
     final newList = _addToRecentList(state.recentApps, path);
     state = state.copyWith(recentApps: newList);
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferences.getInstance();
     await prefs.setStringList(_kRecentAppsKey, newList);
   }
 
@@ -45,7 +45,7 @@ class RecentService extends _$RecentService {
   Future<void> addRecentFolder(String path) async {
     final newList = _addToRecentList(state.recentFolders, path);
     state = state.copyWith(recentFolders: newList);
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferences.getInstance();
     await prefs.setStringList(_kRecentFoldersKey, newList);
   }
 
@@ -53,14 +53,14 @@ class RecentService extends _$RecentService {
   Future<void> addRecentFile(String path) async {
     final newList = _addToRecentList(state.recentFiles, path);
     state = state.copyWith(recentFiles: newList);
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferences.getInstance();
     await prefs.setStringList(_kRecentFilesKey, newList);
   }
 
   /// Clear all recents (optional utility)
   Future<void> clearAll() async {
     state = const RecentState();
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferences.getInstance();
     await prefs.remove(_kRecentAppsKey);
     await prefs.remove(_kRecentFoldersKey);
     await prefs.remove(_kRecentFilesKey);

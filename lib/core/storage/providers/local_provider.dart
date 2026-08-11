@@ -56,29 +56,34 @@ class LocalProvider implements StorageProvider {
       );
     }
 
-    // Load active macOS SMB sharing paths
+    // This information is only available on macOS. Avoid spawning a failed
+    // process for every directory while recursively scanning on other hosts.
     final sharedPaths = <String>{};
-    try {
-      final res = await Process.run('sharing', ['-l']);
-      if (res.exitCode == 0) {
-        final output = res.stdout as String;
-        final lines = output.split('\n');
-        for (final line in lines) {
-          if (line.contains('path:')) {
-            final sharePath = line.split('path:')[1].trim();
-            if (sharePath.isNotEmpty) {
-              sharedPaths.add(sharePath);
+    if (Platform.isMacOS) {
+      try {
+        final res = await Process.run('sharing', ['-l']);
+        if (res.exitCode == 0) {
+          final output = res.stdout as String;
+          final lines = output.split('\n');
+          for (final line in lines) {
+            if (line.contains('path:')) {
+              final sharePath = line.split('path:')[1].trim();
+              if (sharePath.isNotEmpty) {
+                sharedPaths.add(sharePath);
+              }
             }
           }
         }
-      }
-    } catch (_) {}
+      } catch (_) {}
+    }
 
     final showHidden = options?.showHidden ?? false;
     final result = <FileEntry>[];
 
     Object? streamError;
-    final stream = dir.list().handleError((e) {
+    // Never follow links while enumerating. A junction or symlink may point
+    // back to an ancestor and make recursive callers scan forever.
+    final stream = dir.list(followLinks: false).handleError((e) {
       streamError = e;
       debugPrint('LocalProvider list error for path=$path: $e');
     });
@@ -126,7 +131,10 @@ class LocalProvider implements StorageProvider {
   }
 
   @override
-  Stream<TransferProgress> read(String path, {CancelToken? cancelToken}) async* {
+  Stream<TransferProgress> read(
+    String path, {
+    CancelToken? cancelToken,
+  }) async* {
     final file = File(path);
     if (!file.existsSync()) {
       yield TransferProgress(
@@ -251,9 +259,21 @@ class LocalProvider implements StorageProvider {
     final sourceEntry = await stat(sourcePath);
 
     if (sourceEntry.isDirectory) {
-      yield* _copyDirectory(sourcePath, destProvider, destPath, options, cancelToken);
+      yield* _copyDirectory(
+        sourcePath,
+        destProvider,
+        destPath,
+        options,
+        cancelToken,
+      );
     } else {
-      yield* _copyFile(sourcePath, destProvider, destPath, cancelToken);
+      yield* _copyFile(
+        sourcePath,
+        destProvider,
+        destPath,
+        cancelToken,
+        sourceEntry,
+      );
     }
   }
 
@@ -262,6 +282,7 @@ class LocalProvider implements StorageProvider {
     StorageProvider destProvider,
     String destPath,
     CancelToken? cancelToken,
+    FileEntry sourceEntry,
   ) async* {
     // If same provider, use native copy
     if (destProvider is LocalProvider) {
@@ -269,6 +290,7 @@ class LocalProvider implements StorageProvider {
         yield TransferProgress(
           operation: TransferOperation.copy,
           state: TransferState.failed,
+          currentFile: sourceEntry,
           error: 'Source and destination are the same file',
         );
         return;
@@ -290,6 +312,7 @@ class LocalProvider implements StorageProvider {
       yield TransferProgress(
         operation: TransferOperation.copy,
         state: TransferState.inProgress,
+        currentFile: sourceEntry,
         bytesTransferred: 0,
         totalBytes: totalBytes,
       );
@@ -306,6 +329,7 @@ class LocalProvider implements StorageProvider {
             if (await destFile.exists()) await destFile.delete();
             yield TransferProgress(
               operation: TransferOperation.copy,
+              currentFile: sourceEntry,
               state: TransferState.cancelled,
             );
             return;
@@ -318,11 +342,14 @@ class LocalProvider implements StorageProvider {
           bytesTransferred += data.length;
 
           // Throttle progress updates to avoid flooding UI (update every ~1%)
-          if (bytesTransferred == totalBytes || (bytesTransferred - lastYieldedBytes) > (totalBytes / 100).clamp(1024 * 1024, 50 * 1024 * 1024)) {
+          if (bytesTransferred == totalBytes ||
+              (bytesTransferred - lastYieldedBytes) >
+                  (totalBytes / 100).clamp(1024 * 1024, 50 * 1024 * 1024)) {
             lastYieldedBytes = bytesTransferred;
             yield TransferProgress(
               operation: TransferOperation.copy,
               state: TransferState.inProgress,
+              currentFile: sourceEntry,
               bytesTransferred: bytesTransferred,
               totalBytes: totalBytes,
             );
@@ -337,6 +364,7 @@ class LocalProvider implements StorageProvider {
         yield TransferProgress(
           operation: TransferOperation.copy,
           state: TransferState.completed,
+          currentFile: sourceEntry,
           bytesTransferred: totalBytes,
           totalBytes: totalBytes,
         );
@@ -345,6 +373,7 @@ class LocalProvider implements StorageProvider {
         await sourceRaf.close();
         yield TransferProgress(
           operation: TransferOperation.copy,
+          currentFile: sourceEntry,
           state: TransferState.failed,
           error: e.toString(),
         );
@@ -369,22 +398,30 @@ class LocalProvider implements StorageProvider {
       );
 
       // Write to dest provider
-      await for (final progress
-          in destProvider.write(destPath, controller.stream, cancelToken: cancelToken)) {
+      await for (final progress in destProvider.write(
+        destPath,
+        controller.stream,
+        cancelToken: cancelToken,
+      )) {
         if (progress.state == TransferState.inProgress) {
           yield progress.copyWith(
             operation: TransferOperation.copy,
+            currentFile: sourceEntry,
             bytesTransferred: bytesTransferred,
             totalBytes: totalBytes,
           );
         } else if (progress.state == TransferState.completed) {
           yield progress.copyWith(
             operation: TransferOperation.copy,
+            currentFile: sourceEntry,
             bytesTransferred: totalBytes,
             totalBytes: totalBytes,
           );
         } else {
-          yield progress.copyWith(operation: TransferOperation.copy);
+          yield progress.copyWith(
+            operation: TransferOperation.copy,
+            currentFile: sourceEntry,
+          );
         }
       }
     }
@@ -419,9 +456,33 @@ class LocalProvider implements StorageProvider {
       final destEntryPath = joinPath(destPath, entry.name);
 
       if (entry.isDirectory) {
-        yield* _copyDirectory(sourceEntryPath, destProvider, destEntryPath, options, cancelToken);
+        // Do not recurse into junctions/symlinked directories. On Windows a
+        // junction can point back to an ancestor and otherwise never finish.
+        if (entry.symlink) {
+          filesTransferred++;
+          yield TransferProgress(
+            operation: TransferOperation.copy,
+            state: TransferState.inProgress,
+            filesTransferred: filesTransferred,
+            totalFiles: totalFiles,
+          );
+          continue;
+        }
+        yield* _copyDirectory(
+          sourceEntryPath,
+          destProvider,
+          destEntryPath,
+          options,
+          cancelToken,
+        );
       } else {
-        yield* _copyFile(sourceEntryPath, destProvider, destEntryPath, cancelToken);
+        yield* _copyFile(
+          sourceEntryPath,
+          destProvider,
+          destEntryPath,
+          cancelToken,
+          entry,
+        );
       }
 
       filesTransferred++;
@@ -501,7 +562,7 @@ class LocalProvider implements StorageProvider {
     } catch (e) {
       debugPrint('Standard deleteSync failed for $path: $e');
       debugPrint('Attempting fallback with rm -rf...');
-      
+
       // GÜVENLİK: Koştan önce path'in makul olduğunu doğrula.
       // Kök dizin, ev dizini veya /Volumes gibi kritik dizinler silinemez.
       final normalizedPath = p.normalize(path);
@@ -514,11 +575,13 @@ class LocalProvider implements StorageProvider {
           path: path,
         );
       }
-      
+
       try {
         final result = await Process.run('rm', ['-rf', path]);
         if (result.exitCode != 0) {
-          throw Exception('rm -rf başarısız oldu (Exit code: ${result.exitCode}): ${result.stderr}');
+          throw Exception(
+            'rm -rf başarısız oldu (Exit code: ${result.exitCode}): ${result.stderr}',
+          );
         }
       } catch (fallbackError) {
         throw StorageException(
@@ -599,7 +662,7 @@ class LocalProvider implements StorageProvider {
               final totalKb = int.tryParse(parts[1]) ?? 0;
               final usedKb = int.tryParse(parts[2]) ?? 0;
               final freeKb = int.tryParse(parts[3]) ?? 0;
-              
+
               if (totalKb > 0) {
                 return DiskSpaceInfo(
                   totalBytes: totalKb * 1024,
@@ -636,32 +699,28 @@ class LocalProvider implements StorageProvider {
       case ProviderCapability.move:
       case ProviderCapability.mkdir:
       case ProviderCapability.list:
+      case ProviderCapability.freeSpace:
+      case ProviderCapability.symlinks:
       case ProviderCapability.streaming:
       case ProviderCapability.search:
-        return true;
-      case ProviderCapability.freeSpace:
-        return false; // Would need platform channels
-      case ProviderCapability.symlinks:
         return true;
       case ProviderCapability.permissions:
         return !Platform.isWindows;
     }
   }
 
-  // ─── Private helpers ────────────────────────────────────────────
-
   Future<FileEntry> _entityToFileEntry(FileSystemEntity entity) async {
     final name = p.basename(entity.path);
+    final isSymlink = entity is Link;
     final stat = entity.statSync();
-
-    final isDir = entity is Directory;
-    final isSymlink = stat.type == FileSystemEntityType.link;
+    final isDir =
+        entity is Directory ||
+        (isSymlink && stat.type == FileSystemEntityType.directory);
 
     String? symlinkTarget;
     if (isSymlink) {
       try {
-        final link = Link(entity.path);
-        symlinkTarget = link.resolveSymbolicLinksSync();
+        symlinkTarget = entity.resolveSymbolicLinksSync();
       } catch (_) {
         // Broken symlink
       }
@@ -682,10 +741,13 @@ class LocalProvider implements StorageProvider {
   }
 
   Future<FileEntry> _pathToFileEntry(String path) async {
+    final type = FileSystemEntity.typeSync(path, followLinks: false);
     final stat = FileStat.statSync(path);
     final name = p.basename(path);
-    final isDir = stat.type == FileSystemEntityType.directory;
-    final isSymlink = stat.type == FileSystemEntityType.link;
+    final isSymlink = type == FileSystemEntityType.link;
+    final isDir =
+        type == FileSystemEntityType.directory ||
+        (isSymlink && stat.type == FileSystemEntityType.directory);
 
     return FileEntry(
       name: name,
@@ -701,10 +763,18 @@ class LocalProvider implements StorageProvider {
   }
 
   @override
-  Future<List<FileEntry>> search(String path, String query, {bool recursive = false}) async {
+  Future<List<FileEntry>> search(
+    String path,
+    String query, {
+    bool recursive = false,
+  }) async {
     final dir = Directory(path);
     if (!dir.existsSync()) {
-      throw StorageException('Directory not found', code: StorageException.notFound, path: path);
+      throw StorageException(
+        'Directory not found',
+        code: StorageException.notFound,
+        path: path,
+      );
     }
 
     // Replace Turkish characters to make it truly case-insensitive for Turkish users
@@ -716,10 +786,12 @@ class LocalProvider implements StorageProvider {
     final results = <FileEntry>[];
 
     try {
-      final stream = dir.list(recursive: recursive, followLinks: false).handleError((e) {
-        // Ignore file system exceptions like permission denied during recursive search
-      });
-      
+      final stream = dir
+          .list(recursive: recursive, followLinks: false)
+          .handleError((e) {
+            // Ignore file system exceptions like permission denied during recursive search
+          });
+
       await for (final entity in stream) {
         final name = p.basename(entity.path);
         if (trToLower(name).contains(queryLower)) {
@@ -734,7 +806,8 @@ class LocalProvider implements StorageProvider {
     } catch (e) {
       throw StorageException(
         'Arama hatası: $e',
-        code: StorageException.accessDenied, // Yerel dosya işlemi — networkError değil
+        code: StorageException
+            .accessDenied, // Yerel dosya işlemi — networkError değil
         path: path,
         cause: e,
       );

@@ -6,7 +6,7 @@ part of 'recent_service.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$recentServiceHash() => r'60f8c2e47eb66ee457ada000ebf7442a31991bad';
+String _$recentServiceHash() => r'1ff8471f12506396aec283d376582f6610a42edb';
 
 /// Service to manage recent apps, folders, and files.
 ///

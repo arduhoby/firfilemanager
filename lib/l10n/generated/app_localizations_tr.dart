@@ -69,10 +69,16 @@ class AppLocalizationsTr extends AppLocalizations {
   String get actionOpen => 'Aç';
 
   @override
-  String get actionProperties => 'Özellikler';
+  String get actionOpenDefault => 'Varsayılan Uygulamayla Aç';
 
   @override
-  String get actionOpenWith => 'Aç';
+  String get actionOpenWith => 'Şununla Aç';
+
+  @override
+  String get actionChooseApplication => 'Uygulama Seç…';
+
+  @override
+  String get actionProperties => 'Özellikler';
 
   @override
   String get actionRevealInFinder => 'Finder\'da Göster';
@@ -369,4 +375,230 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get emptyFolder => 'Bu klasör boş';
+
+  @override
+  String get progressCurrentFile => 'Geçerli dosya';
+
+  @override
+  String get progressOverall => 'Toplam';
+
+  @override
+  String progressRemaining(String size) {
+    return '$size kaldı';
+  }
+
+  @override
+  String progressSpeed(String speed) {
+    return '$speed/sn';
+  }
+
+  @override
+  String progressEta(String time) {
+    return 'ETA $time';
+  }
+
+  @override
+  String get progressEtaCalculating => 'ETA hesaplanıyor…';
+
+  @override
+  String get syncPreviewTitle => 'Akıllı Senkronizasyon';
+
+  @override
+  String get syncSourcePanel => 'Seçili panel';
+
+  @override
+  String get syncDestinationPanel => 'Hedef panel';
+
+  @override
+  String syncSelectedSummary(int selected, int total) {
+    return '$total dosyanın $selected tanesi seçili';
+  }
+
+  @override
+  String get syncSelectChanges => 'Farklıları seç';
+
+  @override
+  String get syncSelectAll => 'Tümünü seç';
+
+  @override
+  String get syncClearAll => 'Tümünü temizle';
+
+  @override
+  String syncStartSelected(int count) {
+    return 'Senkronize et ($count)';
+  }
+
+  @override
+  String get syncColumnFile => 'Dosya';
+
+  @override
+  String get syncColumnSize => 'Boyut';
+
+  @override
+  String get syncColumnModified => 'Değiştirilme';
+
+  @override
+  String get syncColumnStatus => 'Karşılaştırma';
+
+  @override
+  String get syncStatusNew => 'Yeni';
+
+  @override
+  String get syncStatusDifferent => 'Farklı';
+
+  @override
+  String get syncStatusEqual => 'Eş';
+
+  @override
+  String get syncMissingDestination => 'Hedefte yok';
+
+  @override
+  String get syncNoChanges =>
+      'Fark bulunamadı. Hedef panel seçili panelle zaten eşleşiyor.';
+
+  @override
+  String syncResultSummary(int updated, int created) {
+    return 'Senkronizasyon tamamlandı: $updated dosya yenisiyle değiştirildi, $created yeni dosya kopyalandı.';
+  }
+
+  @override
+  String syncResultFailures(int updated, int created, int failed) {
+    return 'Senkronizasyon bitti: $updated dosya yenisiyle değiştirildi, $created yeni dosya kopyalandı, $failed dosya başarısız oldu.';
+  }
+
+  @override
+  String get syncCancelled => 'Senkronizasyon iptal edildi.';
+
+  @override
+  String get syncStatusInaccessible => 'Erişilemiyor';
+
+  @override
+  String get syncShowSelectedOnly => 'Yalnız seçilenler';
+
+  @override
+  String get syncSearchHint => 'Dosyalarda ara';
+
+  @override
+  String get syncSaveJob => 'Görevi kaydet…';
+
+  @override
+  String get syncEditJob => 'Senkron görevini düzenle';
+
+  @override
+  String get syncJobName => 'Görev adı';
+
+  @override
+  String get syncJobNameRequired => 'Bir görev adı girin.';
+
+  @override
+  String get syncWeekdayRequired => 'En az bir gün seçin.';
+
+  @override
+  String get syncSchedule => 'Zamanlama';
+
+  @override
+  String get syncScheduleManual => 'Manuel';
+
+  @override
+  String get syncScheduleOnce => 'Bir kez';
+
+  @override
+  String get syncScheduleDaily => 'Her gün';
+
+  @override
+  String get syncScheduleWeekly => 'Her hafta';
+
+  @override
+  String get syncJobEnabled => 'Otomasyon etkin';
+
+  @override
+  String get syncRequireWifi => 'Yalnız Wi-Fi ile çalıştır';
+
+  @override
+  String get syncAllowMobileData => 'Mobil veriye izin ver';
+
+  @override
+  String get syncRequireCharging => 'Yalnız şarj olurken çalıştır';
+
+  @override
+  String get weekdayMonday => 'Pzt';
+
+  @override
+  String get weekdayTuesday => 'Sal';
+
+  @override
+  String get weekdayWednesday => 'Çar';
+
+  @override
+  String get weekdayThursday => 'Per';
+
+  @override
+  String get weekdayFriday => 'Cum';
+
+  @override
+  String get weekdaySaturday => 'Cmt';
+
+  @override
+  String get weekdaySunday => 'Paz';
+
+  @override
+  String syncJobSaved(String name) {
+    return '\"$name\" kaydedildi.';
+  }
+
+  @override
+  String syncJobNameConflict(String name) {
+    return '\"$name\" adlı bir görev zaten var.';
+  }
+
+  @override
+  String get syncJobsTitle => 'Fir SmartSync';
+
+  @override
+  String get syncJobsSubtitle => 'Kayıtlı senkron görevleri';
+
+  @override
+  String get syncJobsEmpty => 'Henüz bir senkron görevi kaydedilmedi.';
+
+  @override
+  String get syncJobsEmptyHint =>
+      'Bir dosya panelinden senkronizasyonu açın, dosyaları seçin ve Görevi kaydet seçeneğini kullanın.';
+
+  @override
+  String syncRunSucceeded(int updated, int created) {
+    return 'Senkronizasyon tamamlandı: $updated güncellendi, $created oluşturuldu.';
+  }
+
+  @override
+  String syncRunFailed(int failed) {
+    return '$failed dosyanın senkronizasyonu başarısız oldu.';
+  }
+
+  @override
+  String get syncDeleteJob => 'Senkron görevini sil';
+
+  @override
+  String syncDeleteJobConfirm(String name) {
+    return '\"$name\" görevi ve zamanlaması silinsin mi?';
+  }
+
+  @override
+  String syncHistoryFor(String name) {
+    return '$name geçmişi';
+  }
+
+  @override
+  String get syncHistoryEmpty => 'Henüz bir çalışma kaydedilmedi.';
+
+  @override
+  String get syncFailedLabel => 'Başarısız';
+
+  @override
+  String get syncFailureDetails => 'Hata ayrıntıları';
+
+  @override
+  String get syncRunNow => 'Şimdi çalıştır';
+
+  @override
+  String get syncHistory => 'Geçmiş';
 }

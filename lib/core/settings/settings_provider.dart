@@ -1,11 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../theme/app_theme.dart';
+import '../persistence/app_preferences.dart';
 
 part 'settings_provider.g.dart';
 
@@ -19,14 +18,7 @@ const _kBackgroundOpacityKey = 'settings_background_opacity';
 const _kFolderColorsKey = 'settings_folder_colors_map';
 const _kPlayAnimationSoundsKey = 'settings_play_animation_sounds';
 
-/// Secure storage instance for settings
-const _secureStorage = FlutterSecureStorage(
-  aOptions: AndroidOptions(encryptedSharedPreferences: true),
-);
-
 /// Manages app-level settings: theme mode and locale preference.
-///
-/// Settings are persisted in [FlutterSecureStorage] so they survive app restarts.
 @Riverpod(keepAlive: true)
 class Settings extends _$Settings {
   @override
@@ -37,11 +29,10 @@ class Settings extends _$Settings {
 
   Future<void> _loadSettings() async {
     try {
-      final themeModeStr = await _secureStorage.read(key: _kThemeModeKey);
-      final localeStr = await _secureStorage.read(key: _kLocaleKey);
-      final singlePanelStr = await _secureStorage.read(
-        key: _kSinglePanelModeKey,
-      );
+      final prefs = await AppPreferences.getInstance();
+      final themeModeStr = prefs.getString(_kThemeModeKey);
+      final localeStr = prefs.getString(_kLocaleKey);
+      final singlePanelStr = prefs.getString(_kSinglePanelModeKey);
 
       final themeMode = switch (themeModeStr) {
         'light' => AppThemeMode.light,
@@ -55,7 +46,6 @@ class Settings extends _$Settings {
         _ => null, // null = follow system
       };
 
-      final prefs = await SharedPreferences.getInstance();
       final bgPath = prefs.getString(_kBackgroundImagePathKey);
       final bgOpacity = prefs.getDouble(_kBackgroundOpacityKey) ?? 0.15;
       final playAnimationSounds = prefs.getBool(_kPlayAnimationSoundsKey) ?? true;
@@ -90,29 +80,30 @@ class Settings extends _$Settings {
 
   Future<void> setThemeMode(AppThemeMode mode) async {
     state = state.copyWith(themeMode: mode);
-    await _secureStorage.write(key: _kThemeModeKey, value: mode.name);
+    final prefs = await AppPreferences.getInstance();
+    await prefs.setString(_kThemeModeKey, mode.name);
   }
 
   Future<void> setSinglePanelMode(bool isSingle) async {
     state = state.copyWith(singlePanelMode: isSingle);
-    await _secureStorage.write(
-      key: _kSinglePanelModeKey,
-      value: isSingle.toString(),
-    );
+    final prefs = await AppPreferences.getInstance();
+    await prefs.setString(_kSinglePanelModeKey, isSingle.toString());
   }
 
   Future<void> setLocale(Locale? locale) async {
     state = state.copyWith(locale: locale);
     if (locale != null) {
-      await _secureStorage.write(key: _kLocaleKey, value: locale.languageCode);
+      final prefs = await AppPreferences.getInstance();
+      await prefs.setString(_kLocaleKey, locale.languageCode);
     } else {
-      await _secureStorage.delete(key: _kLocaleKey);
+      final prefs = await AppPreferences.getInstance();
+      await prefs.remove(_kLocaleKey);
     }
   }
 
   Future<void> setBackgroundImagePath(String? path) async {
     state = state.copyWith(backgroundImagePath: path, clearBackgroundPath: path == null);
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferences.getInstance();
     if (path != null) {
       await prefs.setString(_kBackgroundImagePathKey, path);
     } else {
@@ -122,7 +113,7 @@ class Settings extends _$Settings {
 
   Future<void> setBackgroundOpacity(double opacity) async {
     state = state.copyWith(backgroundOpacity: opacity);
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferences.getInstance();
     await prefs.setDouble(_kBackgroundOpacityKey, opacity);
   }
 
@@ -135,13 +126,13 @@ class Settings extends _$Settings {
     }
     state = state.copyWith(folderColors: updatedColors);
 
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferences.getInstance();
     final colorsList = updatedColors.entries.map((e) => '${e.key}::${e.value}').toList();
     await prefs.setStringList(_kFolderColorsKey, colorsList);
   }
   Future<void> setPlayAnimationSounds(bool playSounds) async {
     state = state.copyWith(playAnimationSounds: playSounds);
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferences.getInstance();
     await prefs.setBool(_kPlayAnimationSoundsKey, playSounds);
   }
 }

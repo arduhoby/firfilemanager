@@ -36,10 +36,7 @@ class PanelDragData {
 /// A single file panel showing a directory listing with navigation,
 /// selection, sorting, and context menu support.
 class FilePanel extends ConsumerStatefulWidget {
-  const FilePanel({
-    required this.side,
-    super.key,
-  });
+  const FilePanel({required this.side, super.key});
 
   final PanelSide side;
 
@@ -55,10 +52,10 @@ class _FilePanelState extends ConsumerState<FilePanel> {
   double _sizeColWidth = 72;
   double _dateColWidth = 110;
   late TextEditingController _searchController;
-  
+
   String? _lastPath;
   final Map<String, int?> _calculatedSizes = {};
-  
+
   String? _editingEntryPath;
   late TextEditingController _renameController;
   late FocusNode _renameFocusNode;
@@ -73,7 +70,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
     _renameController = TextEditingController();
     _renameFocusNode = FocusNode();
     _panelFocusNode = FocusNode();
-    
+
     _renameFocusNode.addListener(() {
       if (!_renameFocusNode.hasFocus && _editingEntryPath != null) {
         _commitRename();
@@ -105,15 +102,23 @@ class _FilePanelState extends ConsumerState<FilePanel> {
     }
   }
 
-  void _onEntryTap(FileEntry entry, {bool isControlPressed = false, bool isShiftPressed = false}) {
+  void _onEntryTap(
+    FileEntry entry, {
+    bool isControlPressed = false,
+    bool isShiftPressed = false,
+  }) {
     _selectPanel();
 
     if (isShiftPressed && _lastSelectedPath != null) {
       // Range selection
       if (widget.side == PanelSide.a) {
-        ref.read(panelAProvider.notifier).selectRange(_lastSelectedPath!, entry.path);
+        ref
+            .read(panelAProvider.notifier)
+            .selectRange(_lastSelectedPath!, entry.path);
       } else {
-        ref.read(panelBProvider.notifier).selectRange(_lastSelectedPath!, entry.path);
+        ref
+            .read(panelBProvider.notifier)
+            .selectRange(_lastSelectedPath!, entry.path);
       }
     } else if (isControlPressed) {
       // Toggle selection
@@ -125,9 +130,17 @@ class _FilePanelState extends ConsumerState<FilePanel> {
       _lastSelectedPath = entry.path;
     } else {
       // Single selection
-      final isCurrentlySelected = widget.side == PanelSide.a 
-          ? ref.read(panelAProvider).activeTab.selectedPaths.contains(entry.path)
-          : ref.read(panelBProvider).activeTab.selectedPaths.contains(entry.path);
+      final isCurrentlySelected = widget.side == PanelSide.a
+          ? ref
+                .read(panelAProvider)
+                .activeTab
+                .selectedPaths
+                .contains(entry.path)
+          : ref
+                .read(panelBProvider)
+                .activeTab
+                .selectedPaths
+                .contains(entry.path);
 
       if (isCurrentlySelected && _isActive && _editingEntryPath == null) {
         // Zaten seçiliyse ve panel aktifse, inline rename başlat
@@ -148,14 +161,20 @@ class _FilePanelState extends ConsumerState<FilePanel> {
     if (_panelState.activeTab.searchQuery != null) {
       final targetSide = widget.side == PanelSide.a ? PanelSide.b : PanelSide.a;
       if (entry.isDirectory) {
-        ref.read(panelControllerProvider.notifier).navigate(targetSide, entry.path);
+        ref
+            .read(panelControllerProvider.notifier)
+            .navigate(targetSide, entry.path);
       } else {
         // Find parent directory using path package or basic string manipulation
         final lastSlash = entry.path.lastIndexOf('/');
-        final parentPath = lastSlash > 0 ? entry.path.substring(0, lastSlash) : '/';
-        ref.read(panelControllerProvider.notifier).navigate(targetSide, parentPath);
-        
-        // Wait briefly for navigate to load, then select it. 
+        final parentPath = lastSlash > 0
+            ? entry.path.substring(0, lastSlash)
+            : '/';
+        ref
+            .read(panelControllerProvider.notifier)
+            .navigate(targetSide, parentPath);
+
+        // Wait briefly for navigate to load, then select it.
         // A more robust way would be to select it when navigation completes, but this is a quick attempt.
         Future.delayed(const Duration(milliseconds: 300), () {
           if (targetSide == PanelSide.a) {
@@ -167,7 +186,9 @@ class _FilePanelState extends ConsumerState<FilePanel> {
       }
     } else {
       if (entry.isDirectory) {
-        ref.read(panelControllerProvider.notifier).navigate(widget.side, entry.path);
+        ref
+            .read(panelControllerProvider.notifier)
+            .navigate(widget.side, entry.path);
       } else {
         final actions = ref.read(fileOperationsActionsProvider.notifier);
         actions.openWithDefault(context, widget.side, entry);
@@ -207,47 +228,69 @@ class _FilePanelState extends ConsumerState<FilePanel> {
   Future<void> _commitRename() async {
     final path = _editingEntryPath;
     if (path == null) return;
-    
-    final entry = _panelState.activeTab.entries.where((e) => e.path == path).firstOrNull;
+
+    final entry = _panelState.activeTab.entries
+        .where((e) => e.path == path)
+        .firstOrNull;
     final newName = _renameController.text.trim();
-    
+
     setState(() => _editingEntryPath = null);
-    
+
     if (entry != null && newName.isNotEmpty && newName != entry.name) {
-       final actions = ref.read(fileOperationsActionsProvider.notifier);
-       final provider = widget.side == PanelSide.a
-        ? ref.read(panelAProvider).activeTab.providerId == 'local' ? ref.read(localStorageProviderProvider) : ref.read(storageProviderRegistryProvider)[ref.read(panelAProvider).activeTab.providerId]!
-        : ref.read(panelBProvider).activeTab.providerId == 'local' ? ref.read(localStorageProviderProvider) : ref.read(storageProviderRegistryProvider)[ref.read(panelBProvider).activeTab.providerId]!;
-       
-       try {
-         await ref.read(fileOperationsServiceProvider.notifier).rename(
-           provider: provider,
-           entry: entry,
-           newName: newName,
-         );
-         await ref.read(panelControllerProvider.notifier).refresh(widget.side);
-       } catch (e) {
-         if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
-         }
-       }
+      final actions = ref.read(fileOperationsActionsProvider.notifier);
+      final provider = widget.side == PanelSide.a
+          ? ref.read(panelAProvider).activeTab.providerId == 'local'
+                ? ref.read(localStorageProviderProvider)
+                : ref.read(storageProviderRegistryProvider)[ref
+                      .read(panelAProvider)
+                      .activeTab
+                      .providerId]!
+          : ref.read(panelBProvider).activeTab.providerId == 'local'
+          ? ref.read(localStorageProviderProvider)
+          : ref.read(storageProviderRegistryProvider)[ref
+                .read(panelBProvider)
+                .activeTab
+                .providerId]!;
+
+      try {
+        await ref
+            .read(fileOperationsServiceProvider.notifier)
+            .rename(provider: provider, entry: entry, newName: newName);
+        await ref.read(panelControllerProvider.notifier).refresh(widget.side);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(e.toString())));
+        }
+      }
     }
   }
 
   Future<void> _calculateSizesForSelection(List<FileEntry> entries) async {
     final provider = widget.side == PanelSide.a
-        ? (ref.read(panelAProvider).activeTab.providerId == 'local' ? ref.read(localStorageProviderProvider) : ref.read(storageProviderRegistryProvider)[ref.read(panelAProvider).activeTab.providerId]!)
-        : (ref.read(panelBProvider).activeTab.providerId == 'local' ? ref.read(localStorageProviderProvider) : ref.read(storageProviderRegistryProvider)[ref.read(panelBProvider).activeTab.providerId]!);
+        ? (ref.read(panelAProvider).activeTab.providerId == 'local'
+              ? ref.read(localStorageProviderProvider)
+              : ref.read(storageProviderRegistryProvider)[ref
+                    .read(panelAProvider)
+                    .activeTab
+                    .providerId]!)
+        : (ref.read(panelBProvider).activeTab.providerId == 'local'
+              ? ref.read(localStorageProviderProvider)
+              : ref.read(storageProviderRegistryProvider)[ref
+                    .read(panelBProvider)
+                    .activeTab
+                    .providerId]!);
 
     for (final entry in entries) {
       if (!entry.isDirectory) continue;
-      
+
       setState(() {
         _calculatedSizes[entry.path] = null;
       });
 
       final size = await _computeFolderSize(provider, entry.path);
-      
+
       if (mounted) {
         setState(() {
           if (_calculatedSizes.containsKey(entry.path)) {
@@ -273,38 +316,110 @@ class _FilePanelState extends ConsumerState<FilePanel> {
     return total;
   }
 
-  void _showContextMenu(BuildContext context, Offset position, {FileEntry? entry}) {
+  void _showContextMenu(
+    BuildContext context,
+    Offset position, {
+    FileEntry? entry,
+  }) {
     final l10n = gen.AppLocalizations.of(context)!;
     final actions = ref.read(fileOperationsActionsProvider.notifier);
     final isArchive = entry != null && actions.isArchiveFile(entry);
     final clipboard = ref.read(fileClipboardProvider);
-    final hasClipboardItems = clipboard != null && clipboard.sourcePaths.isNotEmpty;
+    final hasClipboardItems =
+        clipboard != null && clipboard.sourcePaths.isNotEmpty;
+    final editorName = preferredEditorName(currentFileOpenPlatform);
 
     // Build CascadeMenuItem list
     final List<CascadeMenuItem> items;
     if (entry != null) {
       items = [
         if (entry.isDirectory) ...[
-          CascadeMenuItem(value: 'open', label: l10n.actionOpen, icon: Icons.folder_open),
-          CascadeMenuItem(value: 'openTerminal', label: 'Open in Terminal', icon: Icons.terminal),
+          CascadeMenuItem(
+            value: 'open',
+            label: l10n.actionOpen,
+            icon: Icons.folder_open,
+          ),
+          const CascadeMenuItem(
+            value: 'openTerminal',
+            label: 'Open in Terminal',
+            icon: Icons.terminal,
+          ),
         ] else ...[
-          CascadeMenuItem(value: 'open', label: l10n.actionOpen, icon: Icons.folder_open),
-          ...ref.read(recentServiceProvider).recentApps.map((appPath) {
-            final appName = appPath.split('/').last.replaceAll('.app', '');
-            return CascadeMenuItem(value: 'recentApp_$appPath', label: '$appName ile aç', icon: Icons.launch);
-          }),
-          const CascadeMenuItem(value: 'chooseAppAndOpen', label: 'Şununla aç...', icon: Icons.open_in_new),
+          CascadeMenuItem(
+            value: 'openDefault',
+            label: l10n.actionOpenDefault,
+            icon: Icons.launch,
+          ),
+          CascadeMenuItem(
+            value: 'editFile',
+            label: editorName == null
+                ? l10n.actionEdit
+                : '${l10n.actionEdit} ($editorName)',
+            icon: Icons.edit_note,
+          ),
+          CascadeMenuItem(
+            value: 'openWith',
+            label: l10n.actionOpenWith,
+            icon: Icons.open_in_new,
+            children: [
+              ...ref.read(recentServiceProvider).recentApps.map((appPath) {
+                final appName = appPath
+                    .split(RegExp(r'[/\\]'))
+                    .last
+                    .replaceAll(RegExp(r'\.app$', caseSensitive: false), '');
+                return CascadeMenuItem(
+                  value: 'recentApp_$appPath',
+                  label: appName,
+                  icon: Icons.launch,
+                );
+              }),
+              CascadeMenuItem(
+                value: 'chooseAppAndOpen',
+                label: l10n.actionChooseApplication,
+                icon: Icons.apps,
+              ),
+            ],
+          ),
         ],
-        CascadeMenuItem(value: 'quickLook', label: 'Önizle (Quick Look)', icon: Icons.visibility),
-        CascadeMenuItem(value: 'reveal', label: l10n.actionRevealInFinder, icon: Icons.search),
-        CascadeMenuItem(value: 'copyPath', label: 'Copy Path', icon: Icons.copy_all),
+        CascadeMenuItem(
+          value: 'quickLook',
+          label: 'Önizle (Quick Look)',
+          icon: Icons.visibility,
+        ),
+        CascadeMenuItem(
+          value: 'reveal',
+          label: l10n.actionRevealInFinder,
+          icon: Icons.search,
+        ),
+        CascadeMenuItem(
+          value: 'copyPath',
+          label: 'Copy Path',
+          icon: Icons.copy_all,
+        ),
         const CascadeMenuItem.divider(),
-        CascadeMenuItem(value: 'copy', label: l10n.actionCopy, icon: Icons.copy),
+        CascadeMenuItem(
+          value: 'copy',
+          label: l10n.actionCopy,
+          icon: Icons.copy,
+        ),
         CascadeMenuItem(value: 'move', label: l10n.actionMove, icon: Icons.cut),
         if (hasClipboardItems)
-          CascadeMenuItem(value: 'paste', label: l10n.actionPaste, icon: Icons.paste),
-        CascadeMenuItem(value: 'rename', label: l10n.actionRename, icon: Icons.edit),
-        CascadeMenuItem(value: 'delete', label: l10n.actionDelete, icon: Icons.delete, isDestructive: true),
+          CascadeMenuItem(
+            value: 'paste',
+            label: l10n.actionPaste,
+            icon: Icons.paste,
+          ),
+        CascadeMenuItem(
+          value: 'rename',
+          label: l10n.actionRename,
+          icon: Icons.edit,
+        ),
+        CascadeMenuItem(
+          value: 'delete',
+          label: l10n.actionDelete,
+          icon: Icons.delete,
+          isDestructive: true,
+        ),
         const CascadeMenuItem.divider(),
         // Sıkıştırma — cascade submenu
         CascadeMenuItem(
@@ -312,43 +427,109 @@ class _FilePanelState extends ConsumerState<FilePanel> {
           label: 'Sıkıştırma',
           icon: Icons.archive_outlined,
           children: [
-            CascadeMenuItem(value: 'compressZip', label: l10n.actionCompressZip, icon: Icons.folder_zip),
-            CascadeMenuItem(value: 'compressTar', label: l10n.actionCompressTar, icon: Icons.archive_outlined),
-            CascadeMenuItem(value: 'compressTarGz', label: l10n.actionCompressTarGz, icon: Icons.compress),
+            CascadeMenuItem(
+              value: 'compressZip',
+              label: l10n.actionCompressZip,
+              icon: Icons.folder_zip,
+            ),
+            CascadeMenuItem(
+              value: 'compressTar',
+              label: l10n.actionCompressTar,
+              icon: Icons.archive_outlined,
+            ),
+            CascadeMenuItem(
+              value: 'compressTarGz',
+              label: l10n.actionCompressTarGz,
+              icon: Icons.compress,
+            ),
             const CascadeMenuItem.divider(),
-            CascadeMenuItem(value: 'compressZipPwd', label: 'Şifreli ZIP...', icon: Icons.lock_outline),
+            CascadeMenuItem(
+              value: 'compressZipPwd',
+              label: 'Şifreli ZIP...',
+              icon: Icons.lock_outline,
+            ),
           ],
         ),
         if (isArchive)
-          CascadeMenuItem(value: 'extract', label: l10n.actionExtract, icon: Icons.unarchive),
+          CascadeMenuItem(
+            value: 'extract',
+            label: l10n.actionExtract,
+            icon: Icons.unarchive,
+          ),
         if (entry.isShared)
-          const CascadeMenuItem(value: 'shareSmb', label: 'Stop Sharing SMB / Edit', icon: Icons.link_off)
+          const CascadeMenuItem(
+            value: 'shareSmb',
+            label: 'Stop Sharing SMB / Edit',
+            icon: Icons.link_off,
+          )
         else
-          const CascadeMenuItem(value: 'shareSmb', label: 'Share via SMB', icon: Icons.share),
+          const CascadeMenuItem(
+            value: 'shareSmb',
+            label: 'Share via SMB',
+            icon: Icons.share,
+          ),
         const CascadeMenuItem.divider(),
-        CascadeMenuItem(value: 'properties', label: l10n.actionProperties, icon: Icons.info_outline),
+        CascadeMenuItem(
+          value: 'properties',
+          label: l10n.actionProperties,
+          icon: Icons.info_outline,
+        ),
       ];
     } else {
       items = [
-        CascadeMenuItem(value: 'newFolder', label: l10n.actionNewFolder, icon: Icons.create_new_folder),
-        const CascadeMenuItem(value: 'newFile', label: 'Yeni Dosya', icon: Icons.note_add),
+        CascadeMenuItem(
+          value: 'newFolder',
+          label: l10n.actionNewFolder,
+          icon: Icons.create_new_folder,
+        ),
+        const CascadeMenuItem(
+          value: 'newFile',
+          label: 'Yeni Dosya',
+          icon: Icons.note_add,
+        ),
         if (hasClipboardItems)
-          CascadeMenuItem(value: 'paste', label: l10n.actionPaste, icon: Icons.paste),
-        const CascadeMenuItem(value: 'openTerminalBg', label: 'Open in Terminal', icon: Icons.terminal),
-        CascadeMenuItem(value: 'revealBg', label: l10n.actionRevealInFinder, icon: Icons.search),
-        const CascadeMenuItem(value: 'copyBgPath', label: 'Copy Path', icon: Icons.copy_all),
+          CascadeMenuItem(
+            value: 'paste',
+            label: l10n.actionPaste,
+            icon: Icons.paste,
+          ),
+        const CascadeMenuItem(
+          value: 'openTerminalBg',
+          label: 'Open in Terminal',
+          icon: Icons.terminal,
+        ),
+        CascadeMenuItem(
+          value: 'revealBg',
+          label: l10n.actionRevealInFinder,
+          icon: Icons.search,
+        ),
+        const CascadeMenuItem(
+          value: 'copyBgPath',
+          label: 'Copy Path',
+          icon: Icons.copy_all,
+        ),
         const CascadeMenuItem.divider(),
-        CascadeMenuItem(value: 'equalPath', label: 'Diğer Paneli Eşitle (=)', icon: Icons.drag_handle),
-        CascadeMenuItem(value: 'selectAll', label: l10n.actionSelectAll, icon: Icons.select_all),
-        CascadeMenuItem(value: 'refresh', label: l10n.actionRefresh, icon: Icons.refresh),
+        CascadeMenuItem(
+          value: 'equalPath',
+          label: 'Diğer Paneli Eşitle (=)',
+          icon: Icons.drag_handle,
+        ),
+        CascadeMenuItem(
+          value: 'selectAll',
+          label: l10n.actionSelectAll,
+          icon: Icons.select_all,
+        ),
+        CascadeMenuItem(
+          value: 'refresh',
+          label: l10n.actionRefresh,
+          icon: Icons.refresh,
+        ),
       ];
     }
 
-    showCascadeMenu(
-      context: context,
-      position: position,
-      items: items,
-    ).then((value) {
+    showCascadeMenu(context: context, position: position, items: items).then((
+      value,
+    ) {
       if (value == null) return;
 
       if (entry == null) {
@@ -360,15 +541,27 @@ class _FilePanelState extends ConsumerState<FilePanel> {
           case 'paste':
             actions.paste(context, widget.side);
           case 'openTerminalBg':
-            ref.read(fileOpenServiceProvider.notifier).openInTerminal(_panelState.activeTab.currentPath);
+            ref
+                .read(fileOpenServiceProvider.notifier)
+                .openInTerminal(_panelState.activeTab.currentPath);
           case 'revealBg':
-            ref.read(fileOpenServiceProvider.notifier).revealInFileManager(_panelState.activeTab.currentPath);
+            ref
+                .read(fileOpenServiceProvider.notifier)
+                .revealInFileManager(_panelState.activeTab.currentPath);
           case 'copyBgPath':
-            Clipboard.setData(ClipboardData(text: _panelState.activeTab.currentPath));
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Path copied to clipboard')));
+            Clipboard.setData(
+              ClipboardData(text: _panelState.activeTab.currentPath),
+            );
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Path copied to clipboard')),
+            );
           case 'equalPath':
-            final otherSide = widget.side == PanelSide.a ? PanelSide.b : PanelSide.a;
-            ref.read(panelControllerProvider.notifier).navigate(
+            final otherSide = widget.side == PanelSide.a
+                ? PanelSide.b
+                : PanelSide.a;
+            ref
+                .read(panelControllerProvider.notifier)
+                .navigate(
                   otherSide,
                   _panelState.activeTab.currentPath,
                   providerId: _panelState.activeTab.providerId,
@@ -391,20 +584,15 @@ class _FilePanelState extends ConsumerState<FilePanel> {
       switch (value) {
         case 'open':
           _onEntryDoubleTap(entry);
+        case 'openDefault':
+          actions.openWithDefault(context, widget.side, entry);
+        case 'editFile':
+          actions.editFile(context, entry);
         case 'chooseAppAndOpen':
           actions.chooseAppAndOpen(context, entry);
-        case 'openWith':
-          actions.openWithDefault(context, widget.side, entry);
         case String v when v.startsWith('recentApp_'):
-          final appPath = v.substring('recentApp_'.length);
-          if (Platform.isMacOS) {
-            ref.read(recentServiceProvider.notifier).addRecentApp(appPath);
-            ref.read(recentServiceProvider.notifier).addRecentFile(entry.path);
-            Process.run('open', ['-a', appPath, entry.path]).catchError((_) {
-               if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Şununla açılamadı: ${entry.name}')));
-               return ProcessResult(0, 1, '', '');
-            });
-          }
+          final applicationPath = v.substring('recentApp_'.length);
+          actions.openWithApplication(context, entry, applicationPath);
         case 'quickLook':
           showDialog(
             context: context,
@@ -417,7 +605,9 @@ class _FilePanelState extends ConsumerState<FilePanel> {
           actions.revealInFileManager(context, entry);
         case 'copyPath':
           Clipboard.setData(ClipboardData(text: entry.path));
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Path copied to clipboard')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Path copied to clipboard')),
+          );
         case 'copy':
           actions.copyToClipboard(widget.side, entries);
         case 'move':
@@ -433,11 +623,26 @@ class _FilePanelState extends ConsumerState<FilePanel> {
         case 'delete':
           actions.showDeleteDialog(context, widget.side, entries);
         case 'compressZip':
-          actions.compressEntries(context, widget.side, entries, ArchiveFormat.zip);
+          actions.compressEntries(
+            context,
+            widget.side,
+            entries,
+            ArchiveFormat.zip,
+          );
         case 'compressTar':
-          actions.compressEntries(context, widget.side, entries, ArchiveFormat.tar);
+          actions.compressEntries(
+            context,
+            widget.side,
+            entries,
+            ArchiveFormat.tar,
+          );
         case 'compressTarGz':
-          actions.compressEntries(context, widget.side, entries, ArchiveFormat.tarGz);
+          actions.compressEntries(
+            context,
+            widget.side,
+            entries,
+            ArchiveFormat.tarGz,
+          );
         case 'compressZipPwd':
           actions.compressEntriesWithPassword(context, widget.side, entries);
         case 'extract':
@@ -454,8 +659,6 @@ class _FilePanelState extends ConsumerState<FilePanel> {
     });
   }
 
-
-
   void _navigateToAddress() {
     final path = _addressController.text.trim();
     if (path.isNotEmpty) {
@@ -469,8 +672,8 @@ class _FilePanelState extends ConsumerState<FilePanel> {
     final l10n = gen.AppLocalizations.of(context)!;
     final state = _panelState;
     if (_lastPath != state.activeTab.currentPath) {
-       _calculatedSizes.clear();
-       _lastPath = state.activeTab.currentPath;
+      _calculatedSizes.clear();
+      _lastPath = state.activeTab.currentPath;
     }
 
     final isActive = _isActive;
@@ -487,13 +690,25 @@ class _FilePanelState extends ConsumerState<FilePanel> {
           if (event.logicalKey == LogicalKeyboardKey.keyT) {
             final isMac = Theme.of(context).platform == TargetPlatform.macOS;
             final hasModifier = isMac
-                ? (HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.metaLeft) ||
-                   HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.metaRight) ||
-                   HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.altLeft) ||
-                   HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.altRight))
-                : (HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.altLeft) ||
-                   HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.altRight));
-            
+                ? (HardwareKeyboard.instance.logicalKeysPressed.contains(
+                        LogicalKeyboardKey.metaLeft,
+                      ) ||
+                      HardwareKeyboard.instance.logicalKeysPressed.contains(
+                        LogicalKeyboardKey.metaRight,
+                      ) ||
+                      HardwareKeyboard.instance.logicalKeysPressed.contains(
+                        LogicalKeyboardKey.altLeft,
+                      ) ||
+                      HardwareKeyboard.instance.logicalKeysPressed.contains(
+                        LogicalKeyboardKey.altRight,
+                      ))
+                : (HardwareKeyboard.instance.logicalKeysPressed.contains(
+                        LogicalKeyboardKey.altLeft,
+                      ) ||
+                      HardwareKeyboard.instance.logicalKeysPressed.contains(
+                        LogicalKeyboardKey.altRight,
+                      ));
+
             if (hasModifier) {
               final currentPath = _panelState.activeTab.currentPath;
               if (widget.side == PanelSide.a) {
@@ -544,13 +759,15 @@ class _FilePanelState extends ConsumerState<FilePanel> {
               width: isActive ? 2 : 1,
             ),
             borderRadius: BorderRadius.circular(8),
-            color: isActive 
-                ? (ref.watch(settingsProvider).backgroundImagePath != null 
-                    ? theme.colorScheme.surface.withValues(alpha: 0.5)
-                    : theme.colorScheme.primary.withValues(alpha: 0.08)) 
-                : (ref.watch(settingsProvider).backgroundImagePath != null 
-                    ? theme.colorScheme.surface.withValues(alpha: 0.25)
-                    : theme.colorScheme.surfaceContainerLow.withValues(alpha: 0.3)),
+            color: isActive
+                ? (ref.watch(settingsProvider).backgroundImagePath != null
+                      ? theme.colorScheme.surface.withValues(alpha: 0.5)
+                      : theme.colorScheme.primary.withValues(alpha: 0.08))
+                : (ref.watch(settingsProvider).backgroundImagePath != null
+                      ? theme.colorScheme.surface.withValues(alpha: 0.25)
+                      : theme.colorScheme.surfaceContainerLow.withValues(
+                          alpha: 0.3,
+                        )),
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(8),
@@ -559,14 +776,15 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                 PanelDriveBar(side: widget.side),
                 PanelTabsBar(side: widget.side),
                 PanelPathBar(side: widget.side),
-                if (state.activeTab.error != null) _buildErrorBar(context, state.activeTab.error!),
+                if (state.activeTab.error != null)
+                  _buildErrorBar(context, state.activeTab.error!),
                 _buildColumnHeader(context, l10n, state),
                 Expanded(
                   child: state.activeTab.isLoading
                       ? const Center(child: CircularProgressIndicator())
                       : state.activeTab.entries.isEmpty
-                          ? _buildEmptyState(context, l10n)
-                          : _buildFileList(context, l10n, state),
+                      ? _buildEmptyState(context, l10n)
+                      : _buildFileList(context, l10n, state),
                 ),
                 _buildStatusBar(context, l10n, state),
               ],
@@ -577,11 +795,19 @@ class _FilePanelState extends ConsumerState<FilePanel> {
     );
   }
 
-  Widget _buildColumnHeader(BuildContext context, gen.AppLocalizations l10n, PanelState state) {
+  Widget _buildColumnHeader(
+    BuildContext context,
+    gen.AppLocalizations l10n,
+    PanelState state,
+  ) {
     final theme = Theme.of(context);
     final sortColor = theme.colorScheme.primary;
 
-    Widget headerCell(String label, SortField field, {bool alignRight = false}) {
+    Widget headerCell(
+      String label,
+      SortField field, {
+      bool alignRight = false,
+    }) {
       final isSorted = state.activeTab.sortField == field;
       return InkWell(
         onTap: () {
@@ -594,14 +820,18 @@ class _FilePanelState extends ConsumerState<FilePanel> {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           child: Row(
-            mainAxisAlignment: alignRight ? MainAxisAlignment.end : MainAxisAlignment.start,
+            mainAxisAlignment: alignRight
+                ? MainAxisAlignment.end
+                : MainAxisAlignment.start,
             children: [
               Flexible(
                 child: Text(
                   label,
                   style: theme.textTheme.labelSmall?.copyWith(
                     fontWeight: FontWeight.w600,
-                    color: isSorted ? sortColor : theme.colorScheme.onSurfaceVariant,
+                    color: isSorted
+                        ? sortColor
+                        : theme.colorScheme.onSurfaceVariant,
                   ),
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
@@ -610,7 +840,9 @@ class _FilePanelState extends ConsumerState<FilePanel> {
               if (isSorted) ...[
                 const SizedBox(width: 2),
                 Icon(
-                  state.activeTab.sortDirection == SortDirection.ascending ? Icons.arrow_upward : Icons.arrow_downward,
+                  state.activeTab.sortDirection == SortDirection.ascending
+                      ? Icons.arrow_upward
+                      : Icons.arrow_downward,
                   size: 12,
                   color: sortColor,
                 ),
@@ -623,7 +855,9 @@ class _FilePanelState extends ConsumerState<FilePanel> {
 
     return Container(
       decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: theme.dividerColor.withValues(alpha: 0.3))),
+        border: Border(
+          bottom: BorderSide(color: theme.dividerColor.withValues(alpha: 0.3)),
+        ),
         color: theme.colorScheme.surfaceContainerLow,
       ),
       child: LayoutBuilder(
@@ -634,8 +868,11 @@ class _FilePanelState extends ConsumerState<FilePanel> {
           return Row(
             children: [
               // Name column – always visible
-              Expanded(flex: 1, child: headerCell(l10n.sortByName, SortField.name)),
-              
+              Expanded(
+                flex: 1,
+                child: headerCell(l10n.sortByName, SortField.name),
+              ),
+
               if (showSize)
                 MouseRegion(
                   cursor: SystemMouseCursors.resizeColumn,
@@ -644,7 +881,8 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                     behavior: HitTestBehavior.translucent,
                     onHorizontalDragUpdate: (details) {
                       setState(() {
-                        _sizeColWidth = (_sizeColWidth - details.delta.dx).clamp(50.0, 300.0);
+                        _sizeColWidth = (_sizeColWidth - details.delta.dx)
+                            .clamp(50.0, 300.0);
                       });
                     },
                     child: Container(
@@ -661,7 +899,14 @@ class _FilePanelState extends ConsumerState<FilePanel> {
 
               // Size column – only when wide enough
               if (showSize)
-                SizedBox(width: _sizeColWidth, child: headerCell(l10n.sortBySize, SortField.size, alignRight: true)),
+                SizedBox(
+                  width: _sizeColWidth,
+                  child: headerCell(
+                    l10n.sortBySize,
+                    SortField.size,
+                    alignRight: true,
+                  ),
+                ),
 
               if (showDate)
                 MouseRegion(
@@ -671,7 +916,8 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                     behavior: HitTestBehavior.translucent,
                     onHorizontalDragUpdate: (details) {
                       setState(() {
-                        _dateColWidth = (_dateColWidth - details.delta.dx).clamp(80.0, 300.0);
+                        _dateColWidth = (_dateColWidth - details.delta.dx)
+                            .clamp(80.0, 300.0);
                       });
                     },
                     child: Container(
@@ -688,7 +934,14 @@ class _FilePanelState extends ConsumerState<FilePanel> {
 
               // Date column – only when wide enough
               if (showDate)
-                SizedBox(width: _dateColWidth, child: headerCell(l10n.sortByDate, SortField.date, alignRight: true)),
+                SizedBox(
+                  width: _dateColWidth,
+                  child: headerCell(
+                    l10n.sortByDate,
+                    SortField.date,
+                    alignRight: true,
+                  ),
+                ),
             ],
           );
         },
@@ -702,12 +955,18 @@ class _FilePanelState extends ConsumerState<FilePanel> {
       color: Theme.of(context).colorScheme.errorContainer,
       child: Row(
         children: [
-          Icon(Icons.error_outline, size: 16, color: Theme.of(context).colorScheme.onErrorContainer),
+          Icon(
+            Icons.error_outline,
+            size: 16,
+            color: Theme.of(context).colorScheme.onErrorContainer,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               error,
-              style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onErrorContainer,
+              ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -736,34 +995,47 @@ class _FilePanelState extends ConsumerState<FilePanel> {
           Icon(
             Icons.folder_open,
             size: 48,
-            color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
           ),
           const SizedBox(height: 8),
           Text(
             l10n.emptyFolder,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildFileList(BuildContext context, gen.AppLocalizations l10n, PanelState state) {
+  Widget _buildFileList(
+    BuildContext context,
+    gen.AppLocalizations l10n,
+    PanelState state,
+  ) {
     return DragTarget<PanelDragData>(
       onWillAcceptWithDetails: (details) {
         return details.data.sourceSide != widget.side;
       },
       onAcceptWithDetails: (details) {
         final actions = ref.read(fileOperationsActionsProvider.notifier);
-        actions.handleDragAndDrop(context, details.data.sourceSide, widget.side, details.data.entries);
+        actions.handleDragAndDrop(
+          context,
+          details.data.sourceSide,
+          widget.side,
+          details.data.entries,
+        );
       },
       builder: (context, candidateData, rejectedData) {
         final isDropTarget = candidateData.isNotEmpty;
-        
+
         return Container(
-          color: isDropTarget ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.1) : null,
+          color: isDropTarget
+              ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.1)
+              : null,
           child: Scrollbar(
             controller: _scrollController,
             thumbVisibility: true,
@@ -774,12 +1046,16 @@ class _FilePanelState extends ConsumerState<FilePanel> {
               itemCount: state.activeTab.entries.length,
               itemBuilder: (context, index) {
                 final entry = state.activeTab.entries[index];
-                final isSelected = state.activeTab.selectedPaths.contains(entry.path);
+                final isSelected = state.activeTab.selectedPaths.contains(
+                  entry.path,
+                );
 
                 final isEditing = entry.path == _editingEntryPath;
 
                 final calculatedSize = _calculatedSizes[entry.path];
-                final isCalculating = _calculatedSizes.containsKey(entry.path) && calculatedSize == null;
+                final isCalculating =
+                    _calculatedSizes.containsKey(entry.path) &&
+                    calculatedSize == null;
 
                 return _FileListTile(
                   entry: entry,
@@ -795,10 +1071,14 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                   renameController: isEditing ? _renameController : null,
                   renameFocusNode: isEditing ? _renameFocusNode : null,
                   onRenameSubmitted: isEditing ? (_) => _commitRename() : null,
-                  onTap: ({isControl = false, isShift = false}) =>
-                      _onEntryTap(entry, isControlPressed: isControl, isShiftPressed: isShift),
+                  onTap: ({isControl = false, isShift = false}) => _onEntryTap(
+                    entry,
+                    isControlPressed: isControl,
+                    isShiftPressed: isShift,
+                  ),
                   onDoubleTap: () => _onEntryDoubleTap(entry),
-                  onSecondaryTap: (position) => _onEntrySecondaryTap(entry, position),
+                  onSecondaryTap: (position) =>
+                      _onEntrySecondaryTap(entry, position),
                 );
               },
             ),
@@ -808,7 +1088,11 @@ class _FilePanelState extends ConsumerState<FilePanel> {
     );
   }
 
-  Widget _buildStatusBar(BuildContext context, gen.AppLocalizations l10n, PanelState state) {
+  Widget _buildStatusBar(
+    BuildContext context,
+    gen.AppLocalizations l10n,
+    PanelState state,
+  ) {
     final count = state.activeTab.entries.length;
     final selected = state.activeTab.selectionCount;
     final theme = Theme.of(context);
@@ -821,7 +1105,9 @@ class _FilePanelState extends ConsumerState<FilePanel> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
-            selected > 0 ? l10n.itemsSelected(selected) : l10n.itemsCount(count),
+            selected > 0
+                ? l10n.itemsSelected(selected)
+                : l10n.itemsCount(count),
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -875,7 +1161,12 @@ class _FilePanelState extends ConsumerState<FilePanel> {
       builder: (context) => AlertDialog(
         title: Row(
           children: [
-            Icon(Icons.folder, color: currentVal != null ? Color(currentVal) : theme.colorScheme.primary),
+            Icon(
+              Icons.folder,
+              color: currentVal != null
+                  ? Color(currentVal)
+                  : theme.colorScheme.primary,
+            ),
             const SizedBox(width: 8),
             Text(l10n.actionProperties),
           ],
@@ -884,11 +1175,23 @@ class _FilePanelState extends ConsumerState<FilePanel> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('İsim: ${entry.name}', style: const TextStyle(fontWeight: FontWeight.bold)),
+            Text(
+              'İsim: ${entry.name}',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 4),
-            Text('Yol: ${entry.path}', style: TextStyle(color: theme.colorScheme.onSurfaceVariant, fontSize: 12)),
+            Text(
+              'Yol: ${entry.path}',
+              style: TextStyle(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontSize: 12,
+              ),
+            ),
             const SizedBox(height: 12),
-            const Text('Klasör Rengi Seçin:', style: TextStyle(fontWeight: FontWeight.w600)),
+            const Text(
+              'Klasör Rengi Seçin:',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
             const SizedBox(height: 8),
             SizedBox(
               width: 320,
@@ -901,7 +1204,9 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                     return InkWell(
                       borderRadius: BorderRadius.circular(16),
                       onTap: () {
-                        ref.read(settingsProvider.notifier).setFolderColor(entry.path, color);
+                        ref
+                            .read(settingsProvider.notifier)
+                            .setFolderColor(entry.path, color);
                         Navigator.pop(context);
                       },
                       child: Container(
@@ -911,11 +1216,18 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                           color: color,
                           shape: BoxShape.circle,
                           border: isSelected
-                              ? Border.all(color: theme.colorScheme.onSurface, width: 2.5)
+                              ? Border.all(
+                                  color: theme.colorScheme.onSurface,
+                                  width: 2.5,
+                                )
                               : Border.all(color: Colors.black26, width: 0.5),
                         ),
                         child: isSelected
-                            ? const Icon(Icons.check, size: 16, color: Colors.white)
+                            ? const Icon(
+                                Icons.check,
+                                size: 16,
+                                color: Colors.white,
+                              )
                             : null,
                       ),
                     );
@@ -924,7 +1236,9 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                   InkWell(
                     borderRadius: BorderRadius.circular(16),
                     onTap: () {
-                      ref.read(settingsProvider.notifier).setFolderColor(entry.path, null);
+                      ref
+                          .read(settingsProvider.notifier)
+                          .setFolderColor(entry.path, null);
                       Navigator.pop(context);
                     },
                     child: Container(
@@ -935,7 +1249,11 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                         shape: BoxShape.circle,
                         border: Border.all(color: Colors.black26, width: 0.5),
                       ),
-                      child: Icon(Icons.clear, size: 16, color: theme.colorScheme.onSurfaceVariant),
+                      child: Icon(
+                        Icons.clear,
+                        size: 16,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
                 ],
@@ -1036,63 +1354,84 @@ class _FileListTile extends ConsumerWidget {
                           _getIcon(entry),
                           size: 18,
                           color: entry.isDirectory
-                              ? (ref.watch(settingsProvider).folderColors[entry.path] != null
-                                  ? Color(ref.watch(settingsProvider).folderColors[entry.path]!)
-                                  : theme.colorScheme.primary)
+                              ? (ref
+                                            .watch(settingsProvider)
+                                            .folderColors[entry.path] !=
+                                        null
+                                    ? Color(
+                                        ref
+                                            .watch(settingsProvider)
+                                            .folderColors[entry.path]!,
+                                      )
+                                    : theme.colorScheme.primary)
                               : theme.colorScheme.onSurfaceVariant,
                         ),
                         const SizedBox(width: 8),
                         Flexible(
                           child: isEditing
-                            ? SizedBox(
-                                height: 20,
-                                child: TextField(
-                                  controller: renameController,
-                                  focusNode: renameFocusNode,
-                                  onSubmitted: onRenameSubmitted,
-                                  style: theme.textTheme.bodyMedium,
-                                  decoration: const InputDecoration(
-                                    contentPadding: EdgeInsets.only(bottom: 12), // Adjust alignment
-                                    border: InputBorder.none,
-                                    isDense: true,
-                                  ),
-                                ),
-                              )
-                            : panelState.activeTab.searchQuery != null
-                                ? Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        entry.name,
-                                        style: theme.textTheme.bodyMedium?.copyWith(
-                                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      Text(
-                                        entry.path,
-                                        style: theme.textTheme.bodySmall?.copyWith(
-                                          color: theme.colorScheme.onSurfaceVariant,
-                                          fontSize: 10,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
-                                  )
-                                : Text(
-                                    entry.name,
-                                    style: theme.textTheme.bodyMedium?.copyWith(
-                                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                              ? SizedBox(
+                                  height: 20,
+                                  child: TextField(
+                                    controller: renameController,
+                                    focusNode: renameFocusNode,
+                                    onSubmitted: onRenameSubmitted,
+                                    style: theme.textTheme.bodyMedium,
+                                    decoration: const InputDecoration(
+                                      contentPadding: EdgeInsets.only(
+                                        bottom: 12,
+                                      ), // Adjust alignment
+                                      border: InputBorder.none,
+                                      isDense: true,
                                     ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
                                   ),
+                                )
+                              : panelState.activeTab.searchQuery != null
+                              ? Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      entry.name,
+                                      style: theme.textTheme.bodyMedium
+                                          ?.copyWith(
+                                            fontWeight: isSelected
+                                                ? FontWeight.w600
+                                                : FontWeight.normal,
+                                          ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    Text(
+                                      entry.path,
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: theme
+                                                .colorScheme
+                                                .onSurfaceVariant,
+                                            fontSize: 10,
+                                          ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                )
+                              : Text(
+                                  entry.name,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    fontWeight: isSelected
+                                        ? FontWeight.w600
+                                        : FontWeight.normal,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                         ),
                         if (entry.symlink) ...[
                           const SizedBox(width: 4),
-                          Icon(Icons.link, size: 12, color: theme.colorScheme.onSurfaceVariant),
+                          Icon(
+                            Icons.link,
+                            size: 12,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                         ],
                       ],
                     ),
@@ -1101,12 +1440,23 @@ class _FileListTile extends ConsumerWidget {
                   if (showSize)
                     SizedBox(
                       width: sizeColWidth,
-                      child: isCalculating 
-                          ? const Align(alignment: Alignment.centerRight, child: SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2)))
+                      child: isCalculating
+                          ? const Align(
+                              alignment: Alignment.centerRight,
+                              child: SizedBox(
+                                width: 12,
+                                height: 12,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            )
                           : Text(
-                              entry.isDirectory 
-                                ? (calculatedSize != null ? filesize(calculatedSize!) : '')
-                                : filesize(entry.size),
+                              entry.isDirectory
+                                  ? (calculatedSize != null
+                                        ? filesize(calculatedSize!)
+                                        : '')
+                                  : filesize(entry.size),
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: theme.colorScheme.onSurfaceVariant,
                               ),
@@ -1132,7 +1482,9 @@ class _FileListTile extends ConsumerWidget {
                           onTap: () {
                             final box = ctx.findRenderObject() as RenderBox?;
                             if (box != null) {
-                              final offset = box.localToGlobal(Offset(box.size.width / 2, box.size.height / 2));
+                              final offset = box.localToGlobal(
+                                Offset(box.size.width / 2, box.size.height / 2),
+                              );
                               onSecondaryTap(offset);
                             } else {
                               onSecondaryTap(Offset.zero);
@@ -1155,8 +1507,9 @@ class _FileListTile extends ConsumerWidget {
 
     if (isEditing) return tileContent;
 
-    final dragEntries = isSelected && panelState.activeTab.selectedEntries.isNotEmpty 
-        ? panelState.activeTab.selectedEntries 
+    final dragEntries =
+        isSelected && panelState.activeTab.selectedEntries.isNotEmpty
+        ? panelState.activeTab.selectedEntries
         : [entry];
 
     final feedbackWidget = Material(
@@ -1177,7 +1530,11 @@ class _FileListTile extends ConsumerWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(_getIcon(dragEntries.first), size: 24, color: theme.colorScheme.onPrimaryContainer),
+            Icon(
+              _getIcon(dragEntries.first),
+              size: 24,
+              color: theme.colorScheme.onPrimaryContainer,
+            ),
             if (dragEntries.length > 1) ...[
               const SizedBox(width: 8),
               Container(
@@ -1188,7 +1545,9 @@ class _FileListTile extends ConsumerWidget {
                 ),
                 child: Text(
                   '${dragEntries.length}',
-                  style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onPrimary),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onPrimary,
+                  ),
                 ),
               ),
             ],
@@ -1202,10 +1561,7 @@ class _FileListTile extends ConsumerWidget {
       return LongPressDraggable<PanelDragData>(
         data: PanelDragData(sourceSide: side, entries: dragEntries),
         feedback: feedbackWidget,
-        childWhenDragging: Opacity(
-          opacity: 0.5,
-          child: tileContent,
-        ),
+        childWhenDragging: Opacity(opacity: 0.5, child: tileContent),
         child: tileContent,
       );
     }
@@ -1213,10 +1569,7 @@ class _FileListTile extends ConsumerWidget {
     return Draggable<PanelDragData>(
       data: PanelDragData(sourceSide: side, entries: dragEntries),
       feedback: feedbackWidget,
-      childWhenDragging: Opacity(
-        opacity: 0.5,
-        child: tileContent,
-      ),
+      childWhenDragging: Opacity(opacity: 0.5, child: tileContent),
       child: tileContent,
     );
   }
@@ -1228,7 +1581,13 @@ class _FileListTile extends ConsumerWidget {
 
     final ext = entry.extension;
     return switch (ext) {
-      'png' || 'jpg' || 'jpeg' || 'gif' || 'bmp' || 'svg' || 'webp' => Icons.image,
+      'png' ||
+      'jpg' ||
+      'jpeg' ||
+      'gif' ||
+      'bmp' ||
+      'svg' ||
+      'webp' => Icons.image,
       'pdf' => Icons.picture_as_pdf,
       'doc' || 'docx' => Icons.description,
       'xls' || 'xlsx' => Icons.table_chart,
@@ -1238,7 +1597,14 @@ class _FileListTile extends ConsumerWidget {
       'mp4' || 'avi' || 'mkv' || 'mov' || 'webm' => Icons.video_file,
       'txt' || 'md' => Icons.text_snippet,
       'json' || 'xml' || 'yaml' || 'yml' => Icons.code,
-      'dart' || 'py' || 'js' || 'ts' || 'java' || 'c' || 'cpp' || 'h' => Icons.code,
+      'dart' ||
+      'py' ||
+      'js' ||
+      'ts' ||
+      'java' ||
+      'c' ||
+      'cpp' ||
+      'h' => Icons.code,
       'exe' || 'app' || 'sh' => Icons.terminal,
       _ => Icons.insert_drive_file,
     };

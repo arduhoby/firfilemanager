@@ -6,7 +6,7 @@ part of 'file_open_service.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$fileOpenServiceHash() => r'1c72d260d2d1e97d30193bd843fc1518f91fad22';
+String _$fileOpenServiceHash() => r'842a674246860e8c86b76a86a3c8e2a89e39283a';
 
 /// Service for opening files with the system default application.
 ///

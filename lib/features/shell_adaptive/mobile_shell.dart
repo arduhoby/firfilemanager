@@ -1,14 +1,14 @@
+import 'dart:async';
+
 import 'dart:io';
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../connections/connections_sidebar.dart';
 import '../../l10n/generated/app_localizations.dart';
 import '../file_operations/file_operations_state.dart';
+import '../file_operations/sync_jobs_page.dart';
 import 'file_panel.dart';
-import 'panel_controller.dart';
-import 'file_operations_actions.dart';
 
 class MobileShell extends ConsumerStatefulWidget {
   const MobileShell({super.key});
@@ -26,17 +26,27 @@ class _MobileShellState extends ConsumerState<MobileShell> {
     super.initState();
     // In mobile, we might want to sync active panel with bottom nav
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(activePanelProvider.notifier).state =
-          _currentIndex == 0 ? PanelSide.a : PanelSide.b;
+      ref
+          .read(activePanelProvider.notifier)
+          .setActive(_currentIndex == 0 ? PanelSide.a : PanelSide.b);
     });
   }
 
   void _onTabTapped(int index) {
     setState(() {
       _currentIndex = index;
-      ref.read(activePanelProvider.notifier).state =
-          index == 0 ? PanelSide.a : PanelSide.b;
+      ref
+          .read(activePanelProvider.notifier)
+          .setActive(index == 0 ? PanelSide.a : PanelSide.b);
     });
+  }
+
+  void _openSyncJobs() {
+    unawaited(
+      Navigator.of(
+        context,
+      ).push(MaterialPageRoute<void>(builder: (_) => const SyncJobsPage())),
+    );
   }
 
   @override
@@ -63,15 +73,22 @@ class _MobileShellState extends ConsumerState<MobileShell> {
           title: const Text('Fir File Manager'),
           actions: [
             IconButton(
+              icon: const Icon(Icons.sync_lock_outlined),
+              tooltip: loc.syncJobsTitle,
+              onPressed: _openSyncJobs,
+            ),
+            IconButton(
               icon: const Icon(Icons.hub_outlined),
               tooltip: 'Sunucular & Bağlantılar',
               onPressed: () {
-                showModalBottomSheet(
-                  context: context,
-                  isScrollControlled: true,
-                  builder: (context) => SizedBox(
-                    height: MediaQuery.of(context).size.height * 0.75,
-                    child: const ConnectionsSidebar(),
+                unawaited(
+                  showModalBottomSheet<void>(
+                    context: context,
+                    isScrollControlled: true,
+                    builder: (context) => SizedBox(
+                      height: MediaQuery.of(context).size.height * 0.75,
+                      child: const ConnectionsSidebar(),
+                    ),
                   ),
                 );
               },
@@ -92,10 +109,7 @@ class _MobileShellState extends ConsumerState<MobileShell> {
           child: Row(
             children: [
               const Expanded(child: FilePanel(side: PanelSide.a)),
-              Container(
-                width: 1,
-                color: theme.dividerColor,
-              ),
+              Container(width: 1, color: theme.dividerColor),
               const Expanded(child: FilePanel(side: PanelSide.b)),
             ],
           ),
@@ -111,15 +125,22 @@ class _MobileShellState extends ConsumerState<MobileShell> {
         title: const Text('Fir File Manager'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.sync_lock_outlined),
+            tooltip: loc.syncJobsTitle,
+            onPressed: _openSyncJobs,
+          ),
+          IconButton(
             icon: const Icon(Icons.hub_outlined),
             tooltip: 'Sunucular & Bağlantılar',
             onPressed: () {
-              showModalBottomSheet(
-                context: context,
-                isScrollControlled: true,
-                builder: (context) => SizedBox(
-                  height: MediaQuery.of(context).size.height * 0.75,
-                  child: const ConnectionsSidebar(),
+              unawaited(
+                showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (context) => SizedBox(
+                    height: MediaQuery.of(context).size.height * 0.75,
+                    child: const ConnectionsSidebar(),
+                  ),
                 ),
               );
             },
@@ -141,21 +162,21 @@ class _MobileShellState extends ConsumerState<MobileShell> {
         child: FilePanel(side: activeSide),
       ),
       bottomNavigationBar: NavigationBar(
-          selectedIndex: _currentIndex,
-          onDestinationSelected: _onTabTapped,
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.folder_open),
-              selectedIcon: Icon(Icons.folder),
-              label: 'Panel A',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.folder_copy_outlined),
-              selectedIcon: Icon(Icons.folder_copy),
-              label: 'Panel B',
-            ),
-          ],
-        ),
+        selectedIndex: _currentIndex,
+        onDestinationSelected: _onTabTapped,
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.folder_open),
+            selectedIcon: Icon(Icons.folder),
+            label: 'Panel A',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.folder_copy_outlined),
+            selectedIcon: Icon(Icons.folder_copy),
+            label: 'Panel B',
+          ),
+        ],
+      ),
     );
   }
 }

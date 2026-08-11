@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 import 'package:smb_connect/smb_connect.dart';
@@ -12,10 +10,15 @@ import '../storage_provider.dart';
 
 /// A [StorageProvider] that connects to SMB shares using `smb_connect`.
 class SmbProvider implements StorageProvider {
-  SmbProvider({
+  SmbProvider({required this.profile, required this.password})
+    : _isConnected = false;
+
+  SmbProvider.withClient({
     required this.profile,
     required this.password,
-  });
+    required SmbConnect client,
+  }) : _client = client,
+       _isConnected = true;
 
   @override
   final ConnectionProfile profile;
@@ -23,8 +26,22 @@ class SmbProvider implements StorageProvider {
   final String? password;
 
   SmbConnect? _client;
-  bool _isConnected = false;
-  final StreamController<bool> _connectionController = StreamController<bool>.broadcast();
+  bool _isConnected;
+  Future<void> _operationTail = Future<void>.value();
+  final StreamController<bool> _connectionController =
+      StreamController<bool>.broadcast();
+
+  Future<T> _runSerialized<T>(Future<T> Function() operation) {
+    final completer = Completer<T>();
+    _operationTail = _operationTail.then((_) async {
+      try {
+        completer.complete(await operation());
+      } catch (error, stackTrace) {
+        completer.completeError(error, stackTrace);
+      }
+    });
+    return completer.future;
+  }
 
   @override
   String get displayName => 'SMB: ${profile.name}';
@@ -41,14 +58,14 @@ class SmbProvider implements StorageProvider {
       final host = profile.host ?? 'localhost';
       final username = profile.username ?? '';
       final pass = password ?? '';
-      
+
       _client = await SmbConnect.connectAuth(
         host: host,
         username: username,
         password: pass,
         domain: '',
       );
-      
+
       _isConnected = true;
       _connectionController.add(true);
     } catch (e) {
@@ -63,13 +80,15 @@ class SmbProvider implements StorageProvider {
   }
 
   @override
-  Future<void> disconnect() async {
+  Future<void> disconnect() => _runSerialized(_disconnect);
+
+  Future<void> _disconnect() async {
     _isConnected = false;
     try {
       await _client?.close();
     } catch (_) {}
     _client = null;
-    
+
     if (!_connectionController.isClosed) {
       _connectionController.add(false);
       await _connectionController.close();
@@ -77,46 +96,59 @@ class SmbProvider implements StorageProvider {
   }
 
   @override
-  Future<List<FileEntry>> list(String path, [ListOptions? options]) async {
+  Future<List<FileEntry>> list(String path, [ListOptions? options]) =>
+      _runSerialized(() => _list(path, options));
+
+  Future<List<FileEntry>> _list(String path, [ListOptions? options]) async {
     if (!_isConnected || _client == null) {
-      throw StorageException('Not connected', code: StorageException.networkError);
+      throw StorageException(
+        'Not connected',
+        code: StorageException.networkError,
+      );
     }
 
     try {
+      // smb_connect expects POSIX-style paths even when the Flutter app runs
+      // on Windows. Keep the share/folder path stable across platforms.
+      path = normalizePath(path);
       final showHidden = options?.showHidden ?? false;
 
-      // SMB paths normally start with share names. 
+      // SMB paths normally start with share names.
       // If path is root '/', we show available shares.
       if (path == '/' || path == '') {
         final shares = await _client!.listShares();
         return shares
-            .map((share) => FileEntry(
-                  name: share.name,
-                  path: '/${share.name}',
-                  isDirectory: true,
-                  size: 0,
-                  hidden: false,
-                ))
+            .map(
+              (share) => FileEntry(
+                name: share.name,
+                path: '/${share.name}',
+                isDirectory: true,
+                size: 0,
+                hidden: false,
+              ),
+            )
             .toList();
       }
 
       final folder = await _client!.file(path);
       final list = await _client!.listFiles(folder);
-      
+
       return list
           .where((item) {
             if (item.name == '.' || item.name == '..') return false;
             if (!showHidden && item.isHidden()) return false;
             return true;
           })
-          .map((item) => FileEntry(
-                name: item.name,
-                path: p.join(path, item.name),
-                isDirectory: item.isDirectory(),
-                size: item.isDirectory() ? 0 : item.size,
-                modified: DateTime.fromMillisecondsSinceEpoch(item.lastModified),
-                hidden: item.isHidden(),
-              ))
+          .map(
+            (item) => FileEntry(
+              name: item.name,
+              path: joinPath(path, item.name),
+              isDirectory: item.isDirectory(),
+              size: item.isDirectory() ? 0 : item.size,
+              modified: DateTime.fromMillisecondsSinceEpoch(item.lastModified),
+              hidden: item.isHidden(),
+            ),
+          )
           .toList();
     } catch (e) {
       throw StorageException(
@@ -131,16 +163,15 @@ class SmbProvider implements StorageProvider {
   @override
   Future<FileEntry> stat(String path) async {
     if (!_isConnected || _client == null) {
-      throw StorageException('Not connected', code: StorageException.networkError);
+      throw StorageException(
+        'Not connected',
+        code: StorageException.networkError,
+      );
     }
 
     try {
       if (path == '/' || path == '') {
-        return FileEntry(
-          name: 'Root',
-          path: '/',
-          isDirectory: true,
-        );
+        return FileEntry(name: 'Root', path: '/', isDirectory: true);
       }
 
       final file = await _client!.file(path);
@@ -163,7 +194,10 @@ class SmbProvider implements StorageProvider {
   }
 
   @override
-  Stream<TransferProgress> read(String path, {CancelToken? cancelToken}) async* {
+  Stream<TransferProgress> read(
+    String path, {
+    CancelToken? cancelToken,
+  }) async* {
     if (!_isConnected || _client == null) {
       yield TransferProgress(
         operation: TransferOperation.read,
@@ -237,9 +271,19 @@ class SmbProvider implements StorageProvider {
       return;
     }
 
+    final parent = dirname(path);
+    final name = basename(path);
+    final destinationExists = await exists(path);
+    final token = DateTime.now().microsecondsSinceEpoch;
+    final stagingPath = destinationExists
+        ? joinPath(parent, '.$name.fir-part-$token')
+        : path;
+    final backupPath = joinPath(parent, '.$name.fir-backup-$token');
+    var originalMoved = false;
+    var stagingMoved = false;
     try {
-      final file = await _client!.createFile(path);
-      final sink = await _client!.openWrite(file);
+      final stagingFile = await _client!.createFile(stagingPath);
+      final sink = await _client!.openWrite(stagingFile);
       var bytesWritten = 0;
 
       yield TransferProgress(
@@ -251,9 +295,11 @@ class SmbProvider implements StorageProvider {
       await for (final chunk in data) {
         if (cancelToken?.isCancelled ?? false) {
           await sink.close();
+          if (await exists(stagingPath)) await delete(stagingPath);
           yield TransferProgress(
             operation: TransferOperation.write,
             state: TransferState.cancelled,
+            bytesTransferred: bytesWritten,
           );
           return;
         }
@@ -269,16 +315,53 @@ class SmbProvider implements StorageProvider {
       await sink.flush();
       await sink.close();
 
+      if (!destinationExists) {
+        yield TransferProgress(
+          operation: TransferOperation.write,
+          state: TransferState.completed,
+          bytesTransferred: bytesWritten,
+        );
+        return;
+      }
+
+      await move(path, backupPath);
+      originalMoved = true;
+      try {
+        await move(stagingPath, path);
+        stagingMoved = true;
+      } catch (_) {
+        if (originalMoved && await exists(backupPath)) {
+          await move(backupPath, path);
+          originalMoved = false;
+        }
+        rethrow;
+      }
+
+      if (originalMoved) {
+        await delete(backupPath);
+        originalMoved = false;
+      }
+
       yield TransferProgress(
         operation: TransferOperation.write,
         state: TransferState.completed,
         bytesTransferred: bytesWritten,
       );
-    } catch (e) {
+    } catch (error) {
+      try {
+        if (!stagingMoved && await exists(stagingPath)) {
+          await delete(stagingPath);
+        }
+        if (originalMoved && !await exists(path) && await exists(backupPath)) {
+          await move(backupPath, path);
+        }
+      } catch (_) {
+        // Preserve the original transfer error; recovery is best effort.
+      }
       yield TransferProgress(
         operation: TransferOperation.write,
         state: TransferState.failed,
-        error: e.toString(),
+        error: error.toString(),
       );
     }
   }
@@ -303,7 +386,13 @@ class SmbProvider implements StorageProvider {
     try {
       final sourceEntry = await stat(sourcePath);
       if (sourceEntry.isDirectory) {
-        yield* _copyDirectory(sourcePath, destProvider, destPath, options, cancelToken);
+        yield* _copyDirectory(
+          sourcePath,
+          destProvider,
+          destPath,
+          options,
+          cancelToken,
+        );
       } else {
         final totalBytes = sourceEntry.size;
         var bytesTransferred = 0;
@@ -322,7 +411,11 @@ class SmbProvider implements StorageProvider {
           onError: (Object e, [StackTrace? st]) => controller.addError(e, st),
         );
 
-        await for (final progress in destProvider.write(destPath, controller.stream, cancelToken: cancelToken)) {
+        await for (final progress in destProvider.write(
+          destPath,
+          controller.stream,
+          cancelToken: cancelToken,
+        )) {
           if (progress.state == TransferState.inProgress) {
             yield progress.copyWith(
               operation: TransferOperation.copy,
@@ -369,14 +462,23 @@ class SmbProvider implements StorageProvider {
       }
 
       final nextDestPath = destProvider.joinPath(destPath, entry.name);
-      yield* copy(entry.path, destProvider, nextDestPath, options: options, cancelToken: cancelToken);
+      yield* copy(
+        entry.path,
+        destProvider,
+        nextDestPath,
+        options: options,
+        cancelToken: cancelToken,
+      );
     }
   }
 
   @override
   Future<void> move(String sourcePath, String destPath) async {
     if (!_isConnected || _client == null) {
-      throw StorageException('Not connected', code: StorageException.networkError);
+      throw StorageException(
+        'Not connected',
+        code: StorageException.networkError,
+      );
     }
 
     try {
@@ -402,7 +504,10 @@ class SmbProvider implements StorageProvider {
   @override
   Future<void> delete(String path) async {
     if (!_isConnected || _client == null) {
-      throw StorageException('Not connected', code: StorageException.networkError);
+      throw StorageException(
+        'Not connected',
+        code: StorageException.networkError,
+      );
     }
 
     try {
@@ -421,7 +526,10 @@ class SmbProvider implements StorageProvider {
   @override
   Future<void> mkdir(String path) async {
     if (!_isConnected || _client == null) {
-      throw StorageException('Not connected', code: StorageException.networkError);
+      throw StorageException(
+        'Not connected',
+        code: StorageException.networkError,
+      );
     }
 
     try {
@@ -475,7 +583,11 @@ class SmbProvider implements StorageProvider {
   String dirname(String path) => p.dirname(path).replaceAll('\\', '/');
 
   @override
-  Future<List<FileEntry>> search(String path, String query, {bool recursive = false}) async {
+  Future<List<FileEntry>> search(
+    String path,
+    String query, {
+    bool recursive = false,
+  }) async {
     final results = <FileEntry>[];
     final queryLower = query.toLowerCase();
 

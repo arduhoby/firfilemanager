@@ -22,14 +22,24 @@ class PanelController extends _$PanelController {
   void build() {
     // Listen to both panels and auto-load when path or provider changes
     ref.listen(panelAProvider, (previous, next) {
-      if (previous?.activeTab.currentPath != next.activeTab.currentPath || previous?.activeTab.providerId != next.activeTab.providerId) {
-        _loadDirectory(PanelSide.a, next.activeTab.currentPath, next.activeTab.showHidden);
+      if (previous?.activeTab.currentPath != next.activeTab.currentPath ||
+          previous?.activeTab.providerId != next.activeTab.providerId) {
+        _loadDirectory(
+          PanelSide.a,
+          next.activeTab.currentPath,
+          next.activeTab.showHidden,
+        );
       }
     });
 
     ref.listen(panelBProvider, (previous, next) {
-      if (previous?.activeTab.currentPath != next.activeTab.currentPath || previous?.activeTab.providerId != next.activeTab.providerId) {
-        _loadDirectory(PanelSide.b, next.activeTab.currentPath, next.activeTab.showHidden);
+      if (previous?.activeTab.currentPath != next.activeTab.currentPath ||
+          previous?.activeTab.providerId != next.activeTab.providerId) {
+        _loadDirectory(
+          PanelSide.b,
+          next.activeTab.currentPath,
+          next.activeTab.showHidden,
+        );
       }
     });
   }
@@ -44,15 +54,23 @@ class PanelController extends _$PanelController {
       return ref.read(localStorageProviderProvider);
     }
 
-    final provider = ref.read(storageProviderRegistryProvider)[panelState.activeTab.providerId];
+    final provider = ref.read(
+      storageProviderRegistryProvider,
+    )[panelState.activeTab.providerId];
     if (provider == null) {
       throw Exception('Connection is not active or disconnected.');
     }
     return provider;
   }
 
-  Future<void> _loadDirectory(PanelSide side, String path, bool showHidden) async {
-    print('PANEL_CONTROLLER: _loadDirectory started for side=$side, path="$path"');
+  Future<void> _loadDirectory(
+    PanelSide side,
+    String path,
+    bool showHidden,
+  ) async {
+    print(
+      'PANEL_CONTROLLER: _loadDirectory started for side=$side, path="$path"',
+    );
     if (side == PanelSide.a) {
       ref.read(panelAProvider.notifier).setLoading(true);
     } else {
@@ -61,11 +79,19 @@ class PanelController extends _$PanelController {
 
     try {
       final provider = _getProviderForPath(side, path);
-      final entries = await provider.list(
-        path,
-        ListOptions(showHidden: showHidden),
+      final entries = await provider
+          .list(path, ListOptions(showHidden: showHidden))
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () => throw StorageException(
+              'Ağ klasörü 30 saniye içinde yanıt vermedi.',
+              code: StorageException.timeout,
+              path: path,
+            ),
+          );
+      print(
+        'PANEL_CONTROLLER: _loadDirectory loaded ${entries.length} entries for side=$side',
       );
-      print('PANEL_CONTROLLER: _loadDirectory loaded ${entries.length} entries for side=$side');
       if (side == PanelSide.a) {
         ref.read(panelAProvider.notifier).setEntries(entries);
       } else {
@@ -74,7 +100,8 @@ class PanelController extends _$PanelController {
 
       // Add to recent folders if it's local
       final home = Platform.environment['HOME'];
-      if (provider.displayName == 'Local' && (home == null || !path.startsWith('$home/Library/'))) {
+      if (provider.displayName == 'Local' &&
+          (home == null || !path.startsWith('$home/Library/'))) {
         ref.read(recentServiceProvider.notifier).addRecentFolder(path);
       }
 
@@ -84,9 +111,10 @@ class PanelController extends _$PanelController {
       } else {
         _cancelWatcher(side);
       }
-
     } catch (e, stack) {
-      print('PANEL_CONTROLLER: _loadDirectory failed for side=$side. Error: $e\n$stack');
+      print(
+        'PANEL_CONTROLLER: _loadDirectory failed for side=$side. Error: $e\n$stack',
+      );
       if (side == PanelSide.a) {
         ref.read(panelAProvider.notifier).setError(e.toString());
       } else {
@@ -111,19 +139,28 @@ class PanelController extends _$PanelController {
       final dir = Directory(path);
       if (!dir.existsSync()) return;
       // Drive roots on Windows (e.g. 'C:\') cannot be watched reliably
-      if (Platform.isWindows && RegExp(r'^[a-zA-Z]:\\?$').hasMatch(path)) return;
-      final sub = dir.watch(events: FileSystemEvent.all, recursive: false).listen((event) {
-        // Add a small delay to debounce multiple rapid events
-        Future.delayed(const Duration(milliseconds: 100), () {
-          if (side == PanelSide.a) {
-            final activePath = ref.read(panelAProvider).activeTab.currentPath;
-            if (activePath == path) refresh(side);
-          } else {
-            final activePath = ref.read(panelBProvider).activeTab.currentPath;
-            if (activePath == path) refresh(side);
-          }
-        });
-      });
+      if (Platform.isWindows && RegExp(r'^[a-zA-Z]:\\?$').hasMatch(path))
+        return;
+      final sub = dir
+          .watch(events: FileSystemEvent.all, recursive: false)
+          .listen((event) {
+            // Add a small delay to debounce multiple rapid events
+            Future.delayed(const Duration(milliseconds: 100), () {
+              if (side == PanelSide.a) {
+                final activePath = ref
+                    .read(panelAProvider)
+                    .activeTab
+                    .currentPath;
+                if (activePath == path) refresh(side);
+              } else {
+                final activePath = ref
+                    .read(panelBProvider)
+                    .activeTab
+                    .currentPath;
+                if (activePath == path) refresh(side);
+              }
+            });
+          });
       if (side == PanelSide.a) {
         _watchSubscriptionA = sub;
       } else {
@@ -135,9 +172,13 @@ class PanelController extends _$PanelController {
   }
 
   /// Navigate a panel to a new path
-  Future<void> navigate(PanelSide side, String path, {String? providerId}) async {
+  Future<void> navigate(
+    PanelSide side,
+    String path, {
+    String? providerId,
+  }) async {
     String? resolvedProviderId = providerId;
-    
+
     // Auto-detect local paths if providerId is not specified
     if (resolvedProviderId == null) {
       bool isLocal = false;
@@ -145,7 +186,8 @@ class PanelController extends _$PanelController {
         // Only treat Windows drive paths (e.g. C:\, D:\) as local
         isLocal = RegExp(r'^[a-zA-Z]:[/\\]').hasMatch(path);
       } else {
-        isLocal = path.startsWith('/Users/') ||
+        isLocal =
+            path.startsWith('/Users/') ||
             path.startsWith('/home/') ||
             path.startsWith('/tmp/') ||
             path.startsWith('/storage/') ||
@@ -159,13 +201,17 @@ class PanelController extends _$PanelController {
 
     if (side == PanelSide.a) {
       if (resolvedProviderId != null) {
-        ref.read(panelAProvider.notifier).setProviderAndPath(resolvedProviderId, path);
+        ref
+            .read(panelAProvider.notifier)
+            .setProviderAndPath(resolvedProviderId, path);
       } else {
         ref.read(panelAProvider.notifier).setPath(path);
       }
     } else {
       if (resolvedProviderId != null) {
-        ref.read(panelBProvider.notifier).setProviderAndPath(resolvedProviderId, path);
+        ref
+            .read(panelBProvider.notifier)
+            .setProviderAndPath(resolvedProviderId, path);
       } else {
         ref.read(panelBProvider.notifier).setPath(path);
       }
@@ -210,7 +256,10 @@ class PanelController extends _$PanelController {
         : ref.read(panelBProvider);
 
     try {
-      final provider = _getProviderForPath(side, panelState.activeTab.currentPath);
+      final provider = _getProviderForPath(
+        side,
+        panelState.activeTab.currentPath,
+      );
       final home = await provider.homePath;
       await navigate(side, home, providerId: panelState.activeTab.providerId);
     } catch (e) {
@@ -238,11 +287,19 @@ class PanelController extends _$PanelController {
         ? ref.read(panelAProvider)
         : ref.read(panelBProvider);
 
-    await _loadDirectory(side, panelState.activeTab.currentPath, panelState.activeTab.showHidden);
+    await _loadDirectory(
+      side,
+      panelState.activeTab.currentPath,
+      panelState.activeTab.showHidden,
+    );
   }
 
   /// Search inside the current directory
-  Future<void> search(PanelSide side, String query, {bool recursive = false}) async {
+  Future<void> search(
+    PanelSide side,
+    String query, {
+    bool recursive = false,
+  }) async {
     final panelState = side == PanelSide.a
         ? ref.read(panelAProvider)
         : ref.read(panelBProvider);
@@ -259,7 +316,10 @@ class PanelController extends _$PanelController {
     }
 
     try {
-      final provider = _getProviderForPath(side, panelState.activeTab.currentPath);
+      final provider = _getProviderForPath(
+        side,
+        panelState.activeTab.currentPath,
+      );
       final results = await provider.search(
         panelState.activeTab.currentPath,
         query,

@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../settings/settings_dialog.dart';
 
 import 'package:go_router/go_router.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/persistence/app_preferences.dart';
 
 import '../../l10n/generated/app_localizations.dart' as gen;
 import '../../core/storage/models/connection_profile.dart';
@@ -19,9 +19,10 @@ import 'connection_repository.dart';
 import 'network_scanner.dart';
 
 // ─── Sidebar collapsed state provider ──────────────────────────────────────
-final sidebarCollapsedProvider = StateNotifierProvider<_SidebarCollapsedNotifier, bool>(
-  (ref) => _SidebarCollapsedNotifier(),
-);
+final sidebarCollapsedProvider =
+    StateNotifierProvider<_SidebarCollapsedNotifier, bool>(
+      (ref) => _SidebarCollapsedNotifier(),
+    );
 
 class _SidebarCollapsedNotifier extends StateNotifier<bool> {
   static const _key = 'sidebar_collapsed';
@@ -31,13 +32,13 @@ class _SidebarCollapsedNotifier extends StateNotifier<bool> {
   }
 
   Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferences.getInstance();
     state = prefs.getBool(_key) ?? false;
   }
 
   Future<void> toggle() async {
     state = !state;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferences.getInstance();
     await prefs.setBool(_key, state);
   }
 }
@@ -70,7 +71,10 @@ class _ConnectionsSidebarState extends ConsumerState<ConnectionsSidebar>
       vsync: this,
       duration: const Duration(milliseconds: 240),
     );
-    _widthAnim = CurvedAnimation(parent: _animController, curve: Curves.easeInOut);
+    _widthAnim = CurvedAnimation(
+      parent: _animController,
+      curve: Curves.easeInOut,
+    );
 
     // Sync initial animation state
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -109,7 +113,9 @@ class _ConnectionsSidebarState extends ConsumerState<ConnectionsSidebar>
     return AnimatedBuilder(
       animation: _widthAnim,
       builder: (context, child) {
-        final width = _kExpandedWidth - (_kExpandedWidth - _kCollapsedWidth) * _widthAnim.value;
+        final width =
+            _kExpandedWidth -
+            (_kExpandedWidth - _kCollapsedWidth) * _widthAnim.value;
         return SizedBox(
           width: width,
           child: ClipRect(
@@ -133,7 +139,15 @@ class _ConnectionsSidebarState extends ConsumerState<ConnectionsSidebar>
                   children: [
                     _buildHeader(context, l10n, theme, collapsed, isDark),
                     Expanded(
-                      child: _buildBody(context, l10n, theme, connections, registry, discoveredServices, collapsed),
+                      child: _buildBody(
+                        context,
+                        l10n,
+                        theme,
+                        connections,
+                        registry,
+                        discoveredServices,
+                        collapsed,
+                      ),
                     ),
                     _buildFooter(context, l10n, theme, collapsed),
                   ],
@@ -146,7 +160,13 @@ class _ConnectionsSidebarState extends ConsumerState<ConnectionsSidebar>
     );
   }
 
-  Widget _buildHeader(BuildContext context, gen.AppLocalizations l10n, ThemeData theme, bool collapsed, bool isDark) {
+  Widget _buildHeader(
+    BuildContext context,
+    gen.AppLocalizations l10n,
+    ThemeData theme,
+    bool collapsed,
+    bool isDark,
+  ) {
     return Container(
       height: 44,
       padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -182,20 +202,28 @@ class _ConnectionsSidebarState extends ConsumerState<ConnectionsSidebar>
           ),
           if (!collapsed) ...[
             const SizedBox(width: 4),
-            Icon(Icons.cloud_outlined, size: 16, color: theme.colorScheme.primary),
+            Icon(
+              Icons.cloud_outlined,
+              size: 16,
+              color: theme.colorScheme.primary,
+            ),
             const SizedBox(width: 6),
             Expanded(
               child: Text(
                 l10n.navConnections,
-                style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
             _IconBtn(
               icon: _isScanning
                   ? const SizedBox(
-                      width: 16, height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2))
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
                   : const Icon(Icons.wifi_find, size: 16),
               tooltip: 'Scan Network',
               onPressed: _isScanning ? null : () => _scanNetwork(context),
@@ -233,7 +261,9 @@ class _ConnectionsSidebarState extends ConsumerState<ConnectionsSidebar>
             collapsed: collapsed,
             onTap: () {
               final activeSide = ref.read(activePanelProvider);
-              ref.read(panelControllerProvider.notifier).navigate(activeSide, '/', providerId: 'local');
+              ref
+                  .read(panelControllerProvider.notifier)
+                  .navigate(activeSide, '/', providerId: 'local');
               context.go('/');
             },
           ),
@@ -248,6 +278,17 @@ class _ConnectionsSidebarState extends ConsumerState<ConnectionsSidebar>
             color: Colors.teal,
             collapsed: collapsed,
             onTap: () => context.go('/server'),
+          ),
+        ),
+        SliverToBoxAdapter(child: _Divider()),
+        SliverToBoxAdapter(
+          child: _SidebarTile(
+            icon: Icons.sync_lock_outlined,
+            name: l10n.syncJobsTitle,
+            subtitle: l10n.syncJobsSubtitle,
+            color: Colors.indigo,
+            collapsed: collapsed,
+            onTap: () => context.go('/sync'),
           ),
         ),
         SliverToBoxAdapter(child: _Divider()),
@@ -272,7 +313,9 @@ class _ConnectionsSidebarState extends ConsumerState<ConnectionsSidebar>
               child: Text(
                 'SAVED',
                 style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                  color: theme.colorScheme.onSurfaceVariant.withValues(
+                    alpha: 0.6,
+                  ),
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.8,
                   fontSize: 10,
@@ -281,25 +324,38 @@ class _ConnectionsSidebarState extends ConsumerState<ConnectionsSidebar>
             ),
           ),
         // Empty state
-        if (connections.isEmpty && !_isScanning && discoveredServices.isEmpty && !collapsed)
+        if (connections.isEmpty &&
+            !_isScanning &&
+            discoveredServices.isEmpty &&
+            !collapsed)
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
                   const SizedBox(height: 16),
-                  Icon(Icons.cloud_off, size: 28,
-                      color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4)),
+                  Icon(
+                    Icons.cloud_off,
+                    size: 28,
+                    color: theme.colorScheme.onSurfaceVariant.withValues(
+                      alpha: 0.4,
+                    ),
+                  ),
                   const SizedBox(height: 8),
-                  Text('No connections yet',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant)),
+                  Text(
+                    'No connections yet',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
                   const SizedBox(height: 12),
                   FilledButton.icon(
                     onPressed: () => _showAddDialog(context),
                     icon: const Icon(Icons.add, size: 14),
-                    label: Text(l10n.connectionAddNew,
-                        style: const TextStyle(fontSize: 12)),
+                    label: Text(
+                      l10n.connectionAddNew,
+                      style: const TextStyle(fontSize: 12),
+                    ),
                   ),
                 ],
               ),
@@ -307,32 +363,30 @@ class _ConnectionsSidebarState extends ConsumerState<ConnectionsSidebar>
           ),
         // Saved connections
         SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, index) {
-              final profile = connections[index];
-              final isConnected = registry[profile.id]?.isConnected ?? false;
-              final isConnecting = _connectingIds.contains(profile.id);
-              return _SidebarTile(
-                icon: _getIconForType(profile.type),
-                name: profile.name,
-                subtitle: '${profile.host ?? ""}:${profile.effectivePort}',
-                color: _getColorForType(profile.type, theme),
-                isConnected: isConnected,
-                isConnecting: isConnecting,
-                collapsed: collapsed,
-                onTap: () => _connect(context, profile),
-                onEdit: () => _showEditDialog(context, profile),
-                onDelete: () => _deleteConnection(context, profile),
-              );
-            },
-            childCount: connections.length,
-          ),
+          delegate: SliverChildBuilderDelegate((context, index) {
+            final profile = connections[index];
+            final isConnected = registry[profile.id]?.isConnected ?? false;
+            final isConnecting = _connectingIds.contains(profile.id);
+            return _SidebarTile(
+              icon: _getIconForType(profile.type),
+              name: profile.name,
+              subtitle: '${profile.host ?? ""}:${profile.effectivePort}',
+              color: _getColorForType(profile.type, theme),
+              isConnected: isConnected,
+              isConnecting: isConnecting,
+              collapsed: collapsed,
+              onTap: () => _connect(context, profile),
+              onEdit: () => _showEditDialog(context, profile),
+              onDelete: () => _deleteConnection(context, profile),
+            );
+          }, childCount: connections.length),
         ),
         // Discovered
         if (discoveredServices.isNotEmpty && !collapsed) ...[
           SliverToBoxAdapter(
             child: InkWell(
-              onTap: () => setState(() => _discoveredExpanded = !_discoveredExpanded),
+              onTap: () =>
+                  setState(() => _discoveredExpanded = !_discoveredExpanded),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(14, 10, 14, 2),
                 child: Row(
@@ -341,7 +395,9 @@ class _ConnectionsSidebarState extends ConsumerState<ConnectionsSidebar>
                       child: Text(
                         'DISCOVERED',
                         style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                          color: theme.colorScheme.onSurfaceVariant.withValues(
+                            alpha: 0.6,
+                          ),
                           fontWeight: FontWeight.w700,
                           letterSpacing: 0.8,
                           fontSize: 10,
@@ -349,9 +405,13 @@ class _ConnectionsSidebarState extends ConsumerState<ConnectionsSidebar>
                       ),
                     ),
                     Icon(
-                      _discoveredExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                      _discoveredExpanded
+                          ? Icons.keyboard_arrow_up
+                          : Icons.keyboard_arrow_down,
                       size: 14,
-                      color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                      color: theme.colorScheme.onSurfaceVariant.withValues(
+                        alpha: 0.6,
+                      ),
                     ),
                   ],
                 ),
@@ -363,7 +423,10 @@ class _ConnectionsSidebarState extends ConsumerState<ConnectionsSidebar>
               delegate: SliverChildBuilderDelegate(
                 (ctx, i) => _DiscoveredTile(
                   service: discoveredServices[i],
-                  onTap: () => _addDiscoveredAsConnection(context, discoveredServices[i]),
+                  onTap: () => _addDiscoveredAsConnection(
+                    context,
+                    discoveredServices[i],
+                  ),
                 ),
                 childCount: discoveredServices.length,
               ),
@@ -374,11 +437,13 @@ class _ConnectionsSidebarState extends ConsumerState<ConnectionsSidebar>
             child: Padding(
               padding: EdgeInsets.all(16),
               child: Center(
-                child: Column(children: [
-                  CircularProgressIndicator(strokeWidth: 2),
-                  SizedBox(height: 8),
-                  Text('Scanning…', style: TextStyle(fontSize: 12)),
-                ]),
+                child: Column(
+                  children: [
+                    CircularProgressIndicator(strokeWidth: 2),
+                    SizedBox(height: 8),
+                    Text('Scanning…', style: TextStyle(fontSize: 12)),
+                  ],
+                ),
               ),
             ),
           ),
@@ -386,7 +451,12 @@ class _ConnectionsSidebarState extends ConsumerState<ConnectionsSidebar>
     );
   }
 
-  Widget _buildFooter(BuildContext context, gen.AppLocalizations l10n, ThemeData theme, bool collapsed) {
+  Widget _buildFooter(
+    BuildContext context,
+    gen.AppLocalizations l10n,
+    ThemeData theme,
+    bool collapsed,
+  ) {
     final isDark = theme.brightness == Brightness.dark;
     return Container(
       decoration: BoxDecoration(
@@ -400,7 +470,6 @@ class _ConnectionsSidebarState extends ConsumerState<ConnectionsSidebar>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-
           _SidebarTile(
             icon: Icons.settings_outlined,
             name: 'Settings',
@@ -423,9 +492,15 @@ class _ConnectionsSidebarState extends ConsumerState<ConnectionsSidebar>
       showDialog(context: context, builder: (_) => const ConnectionDialog());
 
   void _showEditDialog(BuildContext context, ConnectionProfile profile) =>
-      showDialog(context: context, builder: (_) => ConnectionDialog(existingProfile: profile));
+      showDialog(
+        context: context,
+        builder: (_) => ConnectionDialog(existingProfile: profile),
+      );
 
-  Future<void> _deleteConnection(BuildContext context, ConnectionProfile profile) async {
+  Future<void> _deleteConnection(
+    BuildContext context,
+    ConnectionProfile profile,
+  ) async {
     final l10n = gen.AppLocalizations.of(context)!;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -433,7 +508,10 @@ class _ConnectionsSidebarState extends ConsumerState<ConnectionsSidebar>
         title: Text(l10n.actionRemove),
         content: Text('${l10n.actionRemove} "${profile.name}"?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: Text(l10n.actionCancel)),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(l10n.actionCancel),
+          ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () => Navigator.pop(context, true),
@@ -443,8 +521,12 @@ class _ConnectionsSidebarState extends ConsumerState<ConnectionsSidebar>
       ),
     );
     if (confirmed != true) return;
-    await ref.read(connectionRepositoryProvider.notifier).deleteConnection(profile.id);
-    await ref.read(storageProviderRegistryProvider.notifier).unregister(profile.id);
+    await ref
+        .read(connectionRepositoryProvider.notifier)
+        .deleteConnection(profile.id);
+    await ref
+        .read(storageProviderRegistryProvider.notifier)
+        .unregister(profile.id);
   }
 
   Future<void> _connect(BuildContext context, ConnectionProfile profile) async {
@@ -466,21 +548,27 @@ class _ConnectionsSidebarState extends ConsumerState<ConnectionsSidebar>
         clientSecret: clientSecret,
       );
       final homePath = await provider.homePath;
-      ref.read(panelControllerProvider.notifier).navigate(activeSide, homePath, providerId: profile.id);
+      ref
+          .read(panelControllerProvider.notifier)
+          .navigate(activeSide, homePath, providerId: profile.id);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('${l10n.connectionTestSuccess}: ${profile.name}'),
-          duration: const Duration(seconds: 2),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${l10n.connectionTestSuccess}: ${profile.name}'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
       }
     } catch (e, stack) {
       debugPrint('CONNECTION FAILURE: $e\n$stack');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(l10n.connectionTestFailed(e.toString())),
-          backgroundColor: Theme.of(context).colorScheme.error,
-          duration: const Duration(seconds: 5),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.connectionTestFailed(e.toString())),
+            backgroundColor: Theme.of(context).colorScheme.error,
+            duration: const Duration(seconds: 5),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _connectingIds.remove(profile.id));
@@ -494,24 +582,31 @@ class _ConnectionsSidebarState extends ConsumerState<ConnectionsSidebar>
       await scanner.scanNetwork();
       if (mounted) {
         final results = ref.read(networkScannerProvider);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('${results.length} service(s) found'),
-          duration: const Duration(seconds: 2),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${results.length} service(s) found'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Scan failed: $e'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Scan failed: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _isScanning = false);
     }
   }
 
-  void _addDiscoveredAsConnection(BuildContext context, DiscoveredService service) {
+  void _addDiscoveredAsConnection(
+    BuildContext context,
+    DiscoveredService service,
+  ) {
     final type = switch (service.type) {
       'FTP' => ConnectionType.ftp,
       'SFTP' => ConnectionType.sftp,
@@ -527,23 +622,27 @@ class _ConnectionsSidebarState extends ConsumerState<ConnectionsSidebar>
       port: service.port,
       defaultPath: '/',
     );
-    showDialog(context: context, builder: (_) => ConnectionDialog(existingProfile: profile));
+    showDialog(
+      context: context,
+      builder: (_) => ConnectionDialog(existingProfile: profile),
+    );
   }
 
   IconData _getIconForType(ConnectionType type) => switch (type) {
-        ConnectionType.sftp => Icons.terminal,
-        ConnectionType.ftp => Icons.folder_shared,
-        ConnectionType.ftps => Icons.folder_shared,
-        ConnectionType.webdav => Icons.cloud,
-        ConnectionType.smb => Icons.computer,
-        ConnectionType.gdrive => Icons.cloud_upload,
-        ConnectionType.dropbox => Icons.cloud_queue,
-        ConnectionType.onedrive => Icons.cloud_circle,
-        ConnectionType.nextcloud => Icons.cloud_sync,
-        ConnectionType.local => Icons.computer_outlined,
-      };
+    ConnectionType.sftp => Icons.terminal,
+    ConnectionType.ftp => Icons.folder_shared,
+    ConnectionType.ftps => Icons.folder_shared,
+    ConnectionType.webdav => Icons.cloud,
+    ConnectionType.smb => Icons.computer,
+    ConnectionType.gdrive => Icons.cloud_upload,
+    ConnectionType.dropbox => Icons.cloud_queue,
+    ConnectionType.onedrive => Icons.cloud_circle,
+    ConnectionType.nextcloud => Icons.cloud_sync,
+    ConnectionType.local => Icons.computer_outlined,
+  };
 
-  Color _getColorForType(ConnectionType type, ThemeData theme) => switch (type) {
+  Color _getColorForType(ConnectionType type, ThemeData theme) =>
+      switch (type) {
         ConnectionType.sftp => Colors.green,
         ConnectionType.ftp => Colors.orange,
         ConnectionType.ftps => Colors.deepOrange,
@@ -600,8 +699,13 @@ class _SidebarTileState extends State<_SidebarTile> {
 
     final leadingWidget = widget.isConnecting
         ? SizedBox(
-            width: 18, height: 18,
-            child: CircularProgressIndicator(strokeWidth: 2, color: widget.color))
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: widget.color,
+            ),
+          )
         : Icon(widget.icon, size: 18, color: widget.color);
 
     if (widget.collapsed) {
@@ -628,7 +732,9 @@ class _SidebarTileState extends State<_SidebarTile> {
                         color: Colors.green,
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF5F5F7),
+                          color: isDark
+                              ? const Color(0xFF1C1C1E)
+                              : const Color(0xFFF5F5F7),
                           width: 1,
                         ),
                       ),
@@ -648,9 +754,7 @@ class _SidebarTileState extends State<_SidebarTile> {
         duration: const Duration(milliseconds: 150),
         decoration: BoxDecoration(
           color: _hovered
-              ? (isDark
-                  ? const Color(0x18FFFFFF)
-                  : const Color(0x10000000))
+              ? (isDark ? const Color(0x18FFFFFF) : const Color(0x10000000))
               : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
         ),
@@ -679,7 +783,9 @@ class _SidebarTileState extends State<_SidebarTile> {
                               color: Colors.green,
                               shape: BoxShape.circle,
                               border: Border.all(
-                                color: isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF5F5F7),
+                                color: isDark
+                                    ? const Color(0xFF1C1C1E)
+                                    : const Color(0xFFF5F5F7),
                                 width: 1,
                               ),
                             ),
@@ -706,7 +812,9 @@ class _SidebarTileState extends State<_SidebarTile> {
                       Text(
                         widget.subtitle,
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                          color: theme.colorScheme.onSurfaceVariant.withValues(
+                            alpha: 0.7,
+                          ),
                           fontSize: 10.5,
                         ),
                         maxLines: 1,
@@ -735,29 +843,41 @@ class _TileMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PopupMenuButton<String>(
-      icon: Icon(Icons.more_vert, size: 14,
-          color: Theme.of(context).colorScheme.onSurfaceVariant),
+      icon: Icon(
+        Icons.more_vert,
+        size: 14,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      ),
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(),
       itemBuilder: (_) => [
         if (onEdit != null)
           PopupMenuItem(
             value: 'edit',
-            child: Row(children: [
-              const Icon(Icons.edit, size: 14),
-              const SizedBox(width: 8),
-              Text(gen.AppLocalizations.of(context)!.actionEdit, style: const TextStyle(fontSize: 13)),
-            ]),
+            child: Row(
+              children: [
+                const Icon(Icons.edit, size: 14),
+                const SizedBox(width: 8),
+                Text(
+                  gen.AppLocalizations.of(context)!.actionEdit,
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ],
+            ),
           ),
         if (onDelete != null)
           PopupMenuItem(
             value: 'delete',
-            child: Row(children: [
-              const Icon(Icons.delete, size: 14, color: Colors.red),
-              const SizedBox(width: 8),
-              Text(gen.AppLocalizations.of(context)!.actionRemove,
-                  style: const TextStyle(color: Colors.red, fontSize: 13)),
-            ]),
+            child: Row(
+              children: [
+                const Icon(Icons.delete, size: 14, color: Colors.red),
+                const SizedBox(width: 8),
+                Text(
+                  gen.AppLocalizations.of(context)!.actionRemove,
+                  style: const TextStyle(color: Colors.red, fontSize: 13),
+                ),
+              ],
+            ),
           ),
       ],
       onSelected: (v) {
@@ -823,11 +943,22 @@ class _DiscoveredTile extends StatelessWidget {
 
     return ListTile(
       leading: Icon(icon, size: 18, color: color),
-      title: Text(service.type, style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500)),
-      subtitle: Text('${service.host}:${service.port}', style: theme.textTheme.bodySmall?.copyWith(
-        color: theme.colorScheme.onSurfaceVariant, fontSize: 10,
-      )),
-      trailing: Icon(Icons.add_circle_outline, size: 14, color: theme.colorScheme.primary),
+      title: Text(
+        service.type,
+        style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500),
+      ),
+      subtitle: Text(
+        '${service.host}:${service.port}',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+          fontSize: 10,
+        ),
+      ),
+      trailing: Icon(
+        Icons.add_circle_outline,
+        size: 14,
+        color: theme.colorScheme.primary,
+      ),
       onTap: onTap,
       dense: true,
     );

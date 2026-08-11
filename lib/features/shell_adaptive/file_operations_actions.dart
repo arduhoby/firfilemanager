@@ -13,10 +13,13 @@ import '../file_operations/file_open_service.dart';
 import '../file_operations/file_operations_service.dart';
 import '../file_operations/file_operations_state.dart';
 import '../file_operations/sync_models.dart';
+import '../file_operations/sync_job_models.dart';
+import '../file_operations/sync_repositories.dart';
+import '../file_operations/sync_scheduler.dart';
 import 'panel_controller.dart';
 import 'sync_preview_dialog.dart';
+import 'sync_job_dialog.dart';
 import '../../core/storage/models/transfer_progress.dart';
-import '../../core/settings/settings_provider.dart';
 import '../../core/settings/recent_service.dart';
 import '../file_operations/mac_app_picker_dialog.dart';
 import 'flying_file_animation.dart';
@@ -35,18 +38,23 @@ class FileOperationsActions extends _$FileOperationsActions {
     // Service provider — no state
   }
 
-  void _triggerAnimation(BuildContext context, PanelSide activeSide, TransferOperation operation, bool isDir) {
+  void _triggerAnimation(
+    BuildContext context,
+    PanelSide activeSide,
+    TransferOperation operation,
+    bool isDir,
+  ) {
     if (!context.mounted) return;
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
     final panelA = Offset(screenWidth * 0.25, screenHeight * 0.5);
     final panelB = Offset(screenWidth * 0.75, screenHeight * 0.5);
-    
+
     final start = activeSide == PanelSide.a ? panelA : panelB;
-    final end = operation == TransferOperation.delete 
+    final end = operation == TransferOperation.delete
         ? Offset(screenWidth * 0.5, screenHeight - 50)
         : (activeSide == PanelSide.a ? panelB : panelA);
-    
+
     final icon = operation == TransferOperation.delete
         ? Icons.delete_outline
         : (isDir ? Icons.folder : Icons.insert_drive_file);
@@ -55,15 +63,15 @@ class FileOperationsActions extends _$FileOperationsActions {
         ? Colors.red
         : Theme.of(context).colorScheme.primary;
 
-    final playSound = ref.read(settingsProvider).playAnimationSounds;
-
     FlyingFileAnimation.show(
       context,
       start: start,
       end: end,
       icon: icon,
       color: color,
-      playSound: playSound,
+      // The completion sound is played once by DualPaneShell after the whole
+      // operation finishes, not when the visual animation starts.
+      playSound: false,
     );
   }
 
@@ -76,7 +84,9 @@ class FileOperationsActions extends _$FileOperationsActions {
       return ref.read(localStorageProviderProvider);
     }
 
-    final provider = ref.read(storageProviderRegistryProvider)[panelState.activeTab.providerId];
+    final provider = ref.read(
+      storageProviderRegistryProvider,
+    )[panelState.activeTab.providerId];
     if (provider == null) {
       throw Exception('Connection is not active or disconnected.');
     }
@@ -115,7 +125,9 @@ class FileOperationsActions extends _$FileOperationsActions {
     final clipboard = ref.read(fileClipboardProvider);
     if (clipboard != null && clipboard.sourcePaths.isNotEmpty) {
       final sourceSide = clipboard.sourceSide;
-      final operation = clipboard.operation == ClipboardOperation.cut ? TransferOperation.move : TransferOperation.copy;
+      final operation = clipboard.operation == ClipboardOperation.cut
+          ? TransferOperation.move
+          : TransferOperation.copy;
       // We assume it might be a dir, but it's just for icon
       _triggerAnimation(context, sourceSide, operation, false);
     }
@@ -150,9 +162,7 @@ class FileOperationsActions extends _$FileOperationsActions {
         content: TextField(
           controller: controller,
           autofocus: true,
-          decoration: InputDecoration(
-            labelText: l10n.propertiesName,
-          ),
+          decoration: InputDecoration(labelText: l10n.propertiesName),
         ),
         actions: [
           TextButton(
@@ -175,11 +185,7 @@ class FileOperationsActions extends _$FileOperationsActions {
     final service = ref.read(fileOperationsServiceProvider.notifier);
 
     try {
-      await service.rename(
-        provider: provider,
-        entry: entry,
-        newName: result,
-      );
+      await service.rename(provider: provider, entry: entry, newName: result);
       await ref.read(panelControllerProvider.notifier).refresh(side);
     } catch (e) {
       if (context.mounted) {
@@ -221,7 +227,9 @@ class FileOperationsActions extends _$FileOperationsActions {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Seçili öğeleri silmek istediğinizden emin misiniz?'),
+                  const Text(
+                    'Seçili öğeleri silmek istediğinizden emin misiniz?',
+                  ),
                   const SizedBox(height: 16),
                   Row(
                     children: [
@@ -272,9 +280,14 @@ class FileOperationsActions extends _$FileOperationsActions {
         entries: entries,
         wipe: wipeSelected,
       );
-      
+
       if (context.mounted) {
-        _triggerAnimation(context, side, TransferOperation.delete, entries.isNotEmpty && entries.first.isDirectory);
+        _triggerAnimation(
+          context,
+          side,
+          TransferOperation.delete,
+          entries.isNotEmpty && entries.first.isDirectory,
+        );
       }
 
       // Clear selection and refresh
@@ -288,10 +301,7 @@ class FileOperationsActions extends _$FileOperationsActions {
   }
 
   /// Show new folder dialog
-  Future<void> showNewFolderDialog(
-    BuildContext context,
-    PanelSide side,
-  ) async {
+  Future<void> showNewFolderDialog(BuildContext context, PanelSide side) async {
     final l10n = gen.AppLocalizations.of(context)!;
     final controller = TextEditingController();
     final result = await showDialog<String>(
@@ -301,9 +311,7 @@ class FileOperationsActions extends _$FileOperationsActions {
         content: TextField(
           controller: controller,
           autofocus: true,
-          decoration: InputDecoration(
-            labelText: l10n.propertiesName,
-          ),
+          decoration: InputDecoration(labelText: l10n.propertiesName),
         ),
         actions: [
           TextButton(
@@ -344,10 +352,7 @@ class FileOperationsActions extends _$FileOperationsActions {
   }
 
   /// Show new file dialog
-  Future<void> showNewFileDialog(
-    BuildContext context,
-    PanelSide side,
-  ) async {
+  Future<void> showNewFileDialog(BuildContext context, PanelSide side) async {
     final l10n = gen.AppLocalizations.of(context)!;
     final controller = TextEditingController();
     final result = await showDialog<String>(
@@ -357,9 +362,7 @@ class FileOperationsActions extends _$FileOperationsActions {
         content: TextField(
           controller: controller,
           autofocus: true,
-          decoration: InputDecoration(
-            labelText: l10n.propertiesName,
-          ),
+          decoration: InputDecoration(labelText: l10n.propertiesName),
         ),
         actions: [
           TextButton(
@@ -394,7 +397,10 @@ class FileOperationsActions extends _$FileOperationsActions {
       await ref.read(panelControllerProvider.notifier).refresh(side);
 
       // Open the created file
-      final newFilePath = provider.joinPath(panelState.activeTab.currentPath, result);
+      final newFilePath = provider.joinPath(
+        panelState.activeTab.currentPath,
+        result,
+      );
       final fileOpenService = ref.read(fileOpenServiceProvider.notifier);
       await fileOpenService.openWithDefault(newFilePath);
     } catch (e) {
@@ -428,10 +434,7 @@ class FileOperationsActions extends _$FileOperationsActions {
             if (!entry.isDirectory)
               _propertyRow(l10n.propertiesSize, _formatSize(entry.size)),
             if (entry.modified != null)
-              _propertyRow(
-                l10n.propertiesModified,
-                entry.modified.toString(),
-              ),
+              _propertyRow(l10n.propertiesModified, entry.modified.toString()),
             if (entry.permissions != null)
               _propertyRow(l10n.propertiesPermissions, entry.permissions!),
           ],
@@ -444,8 +447,13 @@ class FileOperationsActions extends _$FileOperationsActions {
         ],
       ),
     );
-  }  /// Copy selected entries from source panel to the other panel
-  Future<void> copyToOtherPanel(BuildContext context, PanelSide sourceSide) async {
+  }
+
+  /// Copy selected entries from source panel to the other panel
+  Future<void> copyToOtherPanel(
+    BuildContext context,
+    PanelSide sourceSide,
+  ) async {
     final sourceState = sourceSide == PanelSide.a
         ? ref.read(panelAProvider)
         : ref.read(panelBProvider);
@@ -472,7 +480,12 @@ class FileOperationsActions extends _$FileOperationsActions {
     final service = ref.read(fileOperationsServiceProvider.notifier);
 
     final entries = sourceState.activeTab.selectedEntries;
-    _triggerAnimation(context, sourceSide, TransferOperation.copy, entries.isNotEmpty && entries.first.isDirectory);
+    _triggerAnimation(
+      context,
+      sourceSide,
+      TransferOperation.copy,
+      entries.isNotEmpty && entries.first.isDirectory,
+    );
 
     await service.copy(
       sourceProvider: sourceProvider,
@@ -486,7 +499,10 @@ class FileOperationsActions extends _$FileOperationsActions {
   }
 
   /// Move selected entries from source panel to the other panel
-  Future<void> moveToOtherPanel(BuildContext context, PanelSide sourceSide) async {
+  Future<void> moveToOtherPanel(
+    BuildContext context,
+    PanelSide sourceSide,
+  ) async {
     final sourceState = sourceSide == PanelSide.a
         ? ref.read(panelAProvider)
         : ref.read(panelBProvider);
@@ -513,7 +529,12 @@ class FileOperationsActions extends _$FileOperationsActions {
     final service = ref.read(fileOperationsServiceProvider.notifier);
 
     final entries = sourceState.activeTab.selectedEntries;
-    _triggerAnimation(context, sourceSide, TransferOperation.move, entries.isNotEmpty && entries.first.isDirectory);
+    _triggerAnimation(
+      context,
+      sourceSide,
+      TransferOperation.move,
+      entries.isNotEmpty && entries.first.isDirectory,
+    );
 
     try {
       await service.move(
@@ -542,7 +563,10 @@ class FileOperationsActions extends _$FileOperationsActions {
 
   /// Shows a dialog asking what to do when a destination file already exists.
   /// Returns: 'overwrite', 'rename', 'skip', or null (cancel all).
-  Future<String?> _showOverwriteDialog(BuildContext context, String fileName) async {
+  Future<String?> _showOverwriteDialog(
+    BuildContext context,
+    String fileName,
+  ) async {
     final theme = Theme.of(context);
     return showDialog<String>(
       context: context,
@@ -570,12 +594,18 @@ class FileOperationsActions extends _$FileOperationsActions {
               ),
               child: Row(
                 children: [
-                  Icon(Icons.insert_drive_file_outlined, size: 18, color: theme.colorScheme.onSurfaceVariant),
+                  Icon(
+                    Icons.insert_drive_file_outlined,
+                    size: 18,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       fileName,
-                      style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -601,7 +631,9 @@ class FileOperationsActions extends _$FileOperationsActions {
             label: const Text('Yeniden Adlandır'),
           ),
           FilledButton.icon(
-            style: FilledButton.styleFrom(backgroundColor: theme.colorScheme.error),
+            style: FilledButton.styleFrom(
+              backgroundColor: theme.colorScheme.error,
+            ),
             onPressed: () => Navigator.pop(context, 'overwrite'),
             icon: const Icon(Icons.file_copy_outlined, size: 16),
             label: const Text('Üzerine Yaz'),
@@ -626,7 +658,10 @@ class FileOperationsActions extends _$FileOperationsActions {
       builder: (context) => AlertDialog(
         title: Row(
           children: [
-            Icon(Icons.drive_file_move_outline, color: theme.colorScheme.primary),
+            Icon(
+              Icons.drive_file_move_outline,
+              color: theme.colorScheme.primary,
+            ),
             const SizedBox(width: 8),
             Text(title),
           ],
@@ -637,7 +672,12 @@ class FileOperationsActions extends _$FileOperationsActions {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Destination Path:', style: theme.textTheme.labelLarge?.copyWith(color: theme.colorScheme.primary)),
+              Text(
+                'Destination Path:',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: theme.colorScheme.primary,
+                ),
+              ),
               const SizedBox(height: 8),
               TextField(
                 controller: controller,
@@ -645,19 +685,25 @@ class FileOperationsActions extends _$FileOperationsActions {
                 style: theme.textTheme.bodyMedium,
                 decoration: InputDecoration(
                   filled: true,
-                  fillColor: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                  fillColor: theme.colorScheme.surfaceContainerHighest
+                      .withValues(alpha: 0.5),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                     borderSide: BorderSide.none,
                   ),
                   prefixIcon: const Icon(Icons.folder_open, size: 20),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
               Text(
                 'Please review the destination path before proceeding.',
-                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),
@@ -682,17 +728,22 @@ class FileOperationsActions extends _$FileOperationsActions {
 
   /// Synchronize selected panel to the other panel
   Future<void> syncPanels(BuildContext context, PanelSide sourceSide) async {
+    final l10n = gen.AppLocalizations.of(context)!;
     final destSide = sourceSide == PanelSide.a ? PanelSide.b : PanelSide.a;
 
-    final sourceState = sourceSide == PanelSide.a ? ref.read(panelAProvider) : ref.read(panelBProvider);
-    final destState = destSide == PanelSide.a ? ref.read(panelAProvider) : ref.read(panelBProvider);
+    final sourceState = sourceSide == PanelSide.a
+        ? ref.read(panelAProvider)
+        : ref.read(panelBProvider);
+    final destState = destSide == PanelSide.a
+        ? ref.read(panelAProvider)
+        : ref.read(panelBProvider);
 
     final sourcePath = sourceState.activeTab.currentPath;
     final destPath = destState.activeTab.currentPath;
 
     final sourceProvider = _getProviderForSide(sourceSide);
     final destProvider = _getProviderForSide(destSide);
-    
+
     final service = ref.read(fileOperationsServiceProvider.notifier);
 
     // Step 1: Analyze
@@ -705,16 +756,16 @@ class FileOperationsActions extends _$FileOperationsActions {
 
     if (syncItems.isEmpty) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No changes found. Directories are already synchronized.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(l10n.syncNoChanges)));
       }
       return;
     }
 
     // Step 2: Show Preview Dialog
     if (!context.mounted) return;
-    
+
     final selectedItems = await showDialog<List<SyncItem>>(
       context: context,
       barrierDismissible: false,
@@ -722,13 +773,23 @@ class FileOperationsActions extends _$FileOperationsActions {
         sourcePath: sourcePath,
         destPath: destPath,
         items: syncItems,
+        onSave: (selection) => _saveSyncJob(
+          context,
+          sourceProviderId: sourceState.activeTab.providerId,
+          sourcePath: sourcePath,
+          sourceDisplayName: sourceProvider.displayName,
+          destinationProviderId: destState.activeTab.providerId,
+          destinationPath: destPath,
+          destinationDisplayName: destProvider.displayName,
+          selection: selection,
+        ),
       ),
     );
 
     if (selectedItems == null || selectedItems.isEmpty) return;
 
     // Step 3: Execute Sync
-    await service.executeSync(
+    final result = await service.executeSync(
       sourceProvider: sourceProvider,
       destProvider: destProvider,
       destPath: destPath,
@@ -738,6 +799,116 @@ class FileOperationsActions extends _$FileOperationsActions {
     // Refresh panels after sync
     await ref.read(panelControllerProvider.notifier).refresh(sourceSide);
     await ref.read(panelControllerProvider.notifier).refresh(destSide);
+
+    if (!context.mounted) return;
+    final message = result.cancelled
+        ? l10n.syncCancelled
+        : result.failedFiles > 0
+        ? l10n.syncResultFailures(
+            result.updatedFiles,
+            result.createdFiles,
+            result.failedFiles,
+          )
+        : l10n.syncResultSummary(result.updatedFiles, result.createdFiles);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: result.failedFiles > 0
+            ? Theme.of(context).colorScheme.error
+            : null,
+      ),
+    );
+  }
+
+  Future<void> _saveSyncJob(
+    BuildContext context, {
+    required String sourceProviderId,
+    required String sourcePath,
+    required String sourceDisplayName,
+    required String destinationProviderId,
+    required String destinationPath,
+    required String destinationDisplayName,
+    required SyncPreviewSelection selection,
+  }) async {
+    final l10n = gen.AppLocalizations.of(context)!;
+    final editorResult = await showDialog<SyncJobEditorResult>(
+      context: context,
+      builder: (context) => SyncJobDialog(
+        suggestedName: '$sourceDisplayName → $destinationDisplayName',
+      ),
+    );
+    if (editorResult == null || !context.mounted) return;
+
+    final sourceVolumeIdentity = await _resolveVolumeIdentity(
+      sourceProviderId,
+      sourcePath,
+    );
+    final destinationVolumeIdentity = await _resolveVolumeIdentity(
+      destinationProviderId,
+      destinationPath,
+    );
+    if (!context.mounted) return;
+
+    final repository = ref.read(syncJobRepositoryProvider.notifier);
+    SyncJob? createdJob;
+    try {
+      createdJob = await repository.create(
+        name: editorResult.name,
+        source: SyncEndpoint(
+          providerId: sourceProviderId,
+          path: sourcePath,
+          displayName: sourceDisplayName,
+          volumeIdentity: sourceVolumeIdentity,
+        ),
+        destination: SyncEndpoint(
+          providerId: destinationProviderId,
+          path: destinationPath,
+          displayName: destinationDisplayName,
+          volumeIdentity: destinationVolumeIdentity,
+        ),
+        selectionPolicy: selection.policy,
+        includedPaths: selection.includedPaths,
+        excludedPaths: selection.excludedPaths,
+        schedule: editorResult.schedule,
+        enabled: editorResult.enabled,
+      );
+      await ref.read(syncSchedulerProvider.notifier).apply(createdJob);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.syncJobSaved(createdJob.name))),
+      );
+    } on SyncJobNameConflict catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.syncJobNameConflict(error.name)),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    } catch (error) {
+      if (createdJob != null) {
+        try {
+          await ref.read(syncSchedulerProvider.notifier).remove(createdJob.id);
+          await repository.delete(createdJob.id);
+        } catch (_) {
+          // Preserve the scheduling error; cleanup is best effort.
+        }
+      }
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString()),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
+  }
+
+  Future<String?> _resolveVolumeIdentity(String providerId, String path) async {
+    if (!Platform.isAndroid || providerId != 'local') return null;
+    return const MethodChannel(
+      'fir_file_manager/file_actions',
+    ).invokeMethod<String>('storageIdentity', {'path': path});
   }
 
   /// Handle Drag and Drop between panels (instant copy)
@@ -760,7 +931,12 @@ class FileOperationsActions extends _$FileOperationsActions {
     final destProvider = _getProviderForSide(destSide);
     final service = ref.read(fileOperationsServiceProvider.notifier);
 
-    _triggerAnimation(context, sourceSide, TransferOperation.copy, entries.isNotEmpty && entries.first.isDirectory);
+    _triggerAnimation(
+      context,
+      sourceSide,
+      TransferOperation.copy,
+      entries.isNotEmpty && entries.first.isDirectory,
+    );
 
     await service.copy(
       sourceProvider: sourceProvider,
@@ -784,61 +960,102 @@ class FileOperationsActions extends _$FileOperationsActions {
     await _executeDeleteOrAsk(context, side, entries);
   }
 
-  /// Open a file with the system default application
-  Future<void> openWithDefault(BuildContext context, PanelSide side, FileEntry entry) async {
+  /// Open a file with the system default application.
+  Future<void> openWithDefault(
+    BuildContext context,
+    PanelSide side,
+    FileEntry entry,
+  ) async {
     final archiveService = ref.read(archiveServiceProvider.notifier);
     if (archiveService.isArchive(entry.path)) {
-      // Eğer dosya bir arşivse (ZIP vs.), Finder (Archive Utility) yerine kendi çıkartma fonksiyonumuzu kullanalım.
       await extractArchive(context, side, entry);
       return;
     }
 
-    ref.read(recentServiceProvider.notifier).addRecentFile(entry.path);
     final openService = ref.read(fileOpenServiceProvider.notifier);
     final success = await openService.openWithDefault(entry.path);
-
-    if (!success && context.mounted) {
-      _showErrorSnackBar(context, 'Failed to open: ${entry.name}');
+    if (success) {
+      await ref.read(recentServiceProvider.notifier).addRecentFile(entry.path);
+    } else if (context.mounted) {
+      _showErrorSnackBar(context, 'Açılamadı: ${entry.name}');
     }
   }
 
-  /// Ask the user to choose an application and open the file
+  /// Edit a file with the editor selected for the current platform.
+  Future<void> editFile(BuildContext context, FileEntry entry) async {
+    final openService = ref.read(fileOpenServiceProvider.notifier);
+    final result = await openService.edit(entry.path);
+
+    switch (result) {
+      case EditFileResult.opened:
+        await ref
+            .read(recentServiceProvider.notifier)
+            .addRecentFile(entry.path);
+      case EditFileResult.downloadPageOpened:
+        if (context.mounted) {
+          _showWarningSnackBar(
+            context,
+            'Kate kurulu değil. Resmî indirme sayfası açıldı.',
+          );
+        }
+      case EditFileResult.failed:
+        if (context.mounted) {
+          _showErrorSnackBar(
+            context,
+            'Sistem düzenleyicisiyle açılamadı: ${entry.name}',
+          );
+        }
+    }
+  }
+
+  /// Open a file with a known application path.
+  Future<void> openWithApplication(
+    BuildContext context,
+    FileEntry entry,
+    String applicationPath,
+  ) async {
+    final openService = ref.read(fileOpenServiceProvider.notifier);
+    final success = await openService.openWithApplication(
+      entry.path,
+      applicationPath,
+    );
+    if (success) {
+      await ref
+          .read(recentServiceProvider.notifier)
+          .addRecentApp(applicationPath);
+      await ref.read(recentServiceProvider.notifier).addRecentFile(entry.path);
+    } else if (context.mounted) {
+      _showWarningSnackBar(context, 'Şununla açılamadı: ${entry.name}');
+    }
+  }
+
+  /// Ask the user to choose an application and open the file.
   Future<void> chooseAppAndOpen(BuildContext context, FileEntry entry) async {
     if (Platform.isMacOS) {
-      final appPath = await MacAppPickerDialog.show(context);
-      if (appPath != null && appPath.isNotEmpty) {
-        ref.read(recentServiceProvider.notifier).addRecentApp(appPath);
-        ref.read(recentServiceProvider.notifier).addRecentFile(entry.path);
-        try {
-          await Process.run('open', ['-a', appPath, entry.path]);
-        } catch (_) {
-          if (context.mounted) {
-            _showWarningSnackBar(context, 'Şununla açılamadı: ${entry.name}');
-          }
-        }
-      } else {
-        if (context.mounted) {
-          _showWarningSnackBar(context, 'İşlem iptal edildi.');
-        }
-      }
+      final applicationPath = await MacAppPickerDialog.show(context);
+      if (applicationPath == null || applicationPath.isEmpty) return;
+      if (!context.mounted) return;
+      await openWithApplication(context, entry, applicationPath);
       return;
     }
 
     final openService = ref.read(fileOpenServiceProvider.notifier);
     final success = await openService.chooseAppAndOpen(entry.path);
     if (success) {
-      // NOTE: file_picker doesn't easily return the app path on Windows/Linux,
-      // but we still add the file to recent files.
-      ref.read(recentServiceProvider.notifier).addRecentFile(entry.path);
-    }
-
-    if (!success && context.mounted) {
-      _showWarningSnackBar(context, 'Şununla açılamadı veya iptal edildi: ${entry.name}');
+      await ref.read(recentServiceProvider.notifier).addRecentFile(entry.path);
+    } else if (context.mounted) {
+      _showWarningSnackBar(
+        context,
+        'Şununla açılamadı veya işlem iptal edildi: ${entry.name}',
+      );
     }
   }
 
   /// Reveal a file in Finder/Explorer
-  Future<void> revealInFileManager(BuildContext context, FileEntry entry) async {
+  Future<void> revealInFileManager(
+    BuildContext context,
+    FileEntry entry,
+  ) async {
     final openService = ref.read(fileOpenServiceProvider.notifier);
     final success = await openService.revealInFileManager(entry.path);
 
@@ -860,9 +1077,7 @@ class FileOperationsActions extends _$FileOperationsActions {
         : ref.read(panelAProvider);
 
     // Suggest archive name based on first entry or selection
-    final suggestedName = entries.length == 1
-        ? entries.first.name
-        : 'archive';
+    final suggestedName = entries.length == 1 ? entries.first.name : 'archive';
 
     final controller = TextEditingController(text: suggestedName);
     final result = await showDialog<String>(
@@ -902,7 +1117,12 @@ class FileOperationsActions extends _$FileOperationsActions {
     final progressNotifier = ref.read(operationProgressProvider.notifier);
 
     // Sıkıştırma başladığında tek bir kopyalama animasyonu göster
-    _triggerAnimation(context, side, TransferOperation.copy, entries.isNotEmpty && entries.first.isDirectory);
+    _triggerAnimation(
+      context,
+      side,
+      TransferOperation.copy,
+      entries.isNotEmpty && entries.first.isDirectory,
+    );
 
     try {
       final progressStream = archiveService.compress(
@@ -919,9 +1139,9 @@ class FileOperationsActions extends _$FileOperationsActions {
       progressNotifier.clear();
 
       // Refresh the destination panel
-      await ref.read(panelControllerProvider.notifier).refresh(
-        side == PanelSide.a ? PanelSide.b : PanelSide.a,
-      );
+      await ref
+          .read(panelControllerProvider.notifier)
+          .refresh(side == PanelSide.a ? PanelSide.b : PanelSide.a);
     } catch (e) {
       ref.read(operationProgressProvider.notifier).clear();
       if (context.mounted) {
@@ -951,11 +1171,20 @@ class FileOperationsActions extends _$FileOperationsActions {
         content: TextField(
           controller: nameCtrl,
           autofocus: true,
-          decoration: const InputDecoration(labelText: 'Arşiv adı', suffixText: '.zip'),
+          decoration: const InputDecoration(
+            labelText: 'Arşiv adı',
+            suffixText: '.zip',
+          ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('İptal')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, nameCtrl.text), child: const Text('Devam')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('İptal'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, nameCtrl.text),
+            child: const Text('Devam'),
+          ),
         ],
       ),
     );
@@ -982,7 +1211,9 @@ class FileOperationsActions extends _$FileOperationsActions {
                   decoration: InputDecoration(
                     labelText: 'Şifre',
                     suffixIcon: IconButton(
-                      icon: Icon(obscure ? Icons.visibility_off : Icons.visibility),
+                      icon: Icon(
+                        obscure ? Icons.visibility_off : Icons.visibility,
+                      ),
                       onPressed: () => setSt(() => obscure = !obscure),
                     ),
                   ),
@@ -991,12 +1222,17 @@ class FileOperationsActions extends _$FileOperationsActions {
                 TextField(
                   controller: pwd2Ctrl,
                   obscureText: obscure,
-                  decoration: const InputDecoration(labelText: 'Şifreyi tekrar girin'),
+                  decoration: const InputDecoration(
+                    labelText: 'Şifreyi tekrar girin',
+                  ),
                 ),
               ],
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx2), child: const Text('İptal')),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx2),
+                child: const Text('İptal'),
+              ),
               FilledButton(
                 onPressed: () {
                   if (pwdCtrl.text != pwd2Ctrl.text) {
@@ -1029,7 +1265,7 @@ class FileOperationsActions extends _$FileOperationsActions {
     final sourceDir = side == PanelSide.a
         ? ref.read(panelAProvider).activeTab.currentPath
         : ref.read(panelBProvider).activeTab.currentPath;
-        
+
     final outputPath = '$destDir/$archiveName.zip';
     // Use relative names so we don't capture full absolute paths in the zip
     final sourceNames = entries.map((e) => e.name).toList();
@@ -1053,22 +1289,26 @@ class FileOperationsActions extends _$FileOperationsActions {
       // GÜVENLIK: Şifreyi -P argümanı yerine stdin üzerinden gönderiyoruz
       // böylece `ps aux` ile şifre görünmez.
       final args = ['-r', '-e', '-P', '-', outputPath, ...sourceNames];
-      final process = await Process.start('zip', args, workingDirectory: sourceDir);
+      final process = await Process.start(
+        'zip',
+        args,
+        workingDirectory: sourceDir,
+      );
       process.stdin.writeln(password); // şifreyi stdin'e yaz
       await process.stdin.close();
       final exitCode = await process.exitCode;
       final stderr = await process.stderr.transform(utf8.decoder).join();
-      
+
       // Close loading dialog
       if (context.mounted) Navigator.pop(context);
-      
+
       if (exitCode != 0) {
         throw Exception(stderr);
       }
-      
+
       final destSide = side == PanelSide.a ? PanelSide.b : PanelSide.a;
       await ref.read(panelControllerProvider.notifier).refresh(destSide);
-      
+
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('$archiveName.zip başarıyla oluşturuldu!')),
@@ -1119,7 +1359,10 @@ class FileOperationsActions extends _$FileOperationsActions {
               onSubmitted: (v) => Navigator.pop(ctx2, v),
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx2), child: const Text('İptal')),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx2),
+                child: const Text('İptal'),
+              ),
               FilledButton(
                 onPressed: () => Navigator.pop(ctx2, pwdCtrl.text),
                 child: const Text('Tamam'),
@@ -1129,7 +1372,7 @@ class FileOperationsActions extends _$FileOperationsActions {
         ),
       );
       pwdCtrl.dispose();
-      
+
       // If user cancelled password dialog
       if (password == null || password.isEmpty) return;
     }
@@ -1155,18 +1398,20 @@ class FileOperationsActions extends _$FileOperationsActions {
       String? lastFile;
       await for (final progress in progressStream) {
         progressNotifier.setProgress(progress);
-        
+
         // Trigger animation only for new files (avoid spamming)
-        if (progress.currentFile != null && progress.currentFile!.name != lastFile && progress.currentFile!.name != 'Done') {
+        if (progress.currentFile != null &&
+            progress.currentFile!.name != lastFile &&
+            progress.currentFile!.name != 'Done') {
           lastFile = progress.currentFile!.name;
           _triggerAnimation(context, side, TransferOperation.copy, false);
         }
       }
-      
+
       progressNotifier.clear();
 
       await ref.read(panelControllerProvider.notifier).refresh(destSide);
-      
+
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Arşiv başarıyla çıkartıldı!')),
@@ -1210,10 +1455,7 @@ class FileOperationsActions extends _$FileOperationsActions {
 
   void _showWarningSnackBar(BuildContext context, String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.orange,
-      ),
+      SnackBar(content: Text(message), backgroundColor: Colors.orange),
     );
   }
 
@@ -1250,7 +1492,9 @@ class FileOperationsActions extends _$FileOperationsActions {
     // 1. Get local IPs
     final ips = <String>[];
     try {
-      final interfaces = await NetworkInterface.list(type: InternetAddressType.IPv4);
+      final interfaces = await NetworkInterface.list(
+        type: InternetAddressType.IPv4,
+      );
       for (final interface in interfaces) {
         for (final addr in interface.addresses) {
           if (!addr.isLoopback) {
@@ -1275,14 +1519,14 @@ class FileOperationsActions extends _$FileOperationsActions {
         final lines = output.split('\n');
         String? currentName;
         String? currentPath;
-        
+
         for (final line in lines) {
           final trimmed = line.trim();
           if (line.startsWith('name:')) {
             currentName = line.split('name:')[1].trim();
           } else if (trimmed.startsWith('path:')) {
             currentPath = line.split('path:')[1].trim();
-            
+
             if (currentName != null && currentPath != null) {
               final ep = entry.path.replaceAll(RegExp(r'/+$'), '');
               final sp = currentPath.replaceAll(RegExp(r'/+$'), '');
@@ -1376,7 +1620,11 @@ class _SmbShareDialogState extends State<_SmbShareDialog> {
       if (privilegedRes.exitCode == 0) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Operation completed successfully (with admin privileges)!')),
+            const SnackBar(
+              content: Text(
+                'Operation completed successfully (with admin privileges)!',
+              ),
+            ),
           );
           Navigator.pop(context);
         }
@@ -1389,9 +1637,9 @@ class _SmbShareDialogState extends State<_SmbShareDialog> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     } finally {
       if (mounted) {
@@ -1409,15 +1657,19 @@ class _SmbShareDialogState extends State<_SmbShareDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final shareName = widget.isAlreadyShared ? widget.matchedShareName : widget.defaultShareName;
+    final shareName = widget.isAlreadyShared
+        ? widget.matchedShareName
+        : widget.defaultShareName;
     final relPath = widget.relativePath.replaceAll('/', '\\');
-    
+
     // Construct URLs
     final macUrl = 'smb://$_selectedIp/$shareName${widget.relativePath}';
     final winUrl = '\\\\$_selectedIp\\$shareName$relPath';
-    
-    final cliCommandSecure = 'sudo sharing -a "${widget.entry.path}" -n "$shareName"';
-    final cliCommandGuest = 'sudo sharing -a "${widget.entry.path}" -n "$shareName" -g';
+
+    final cliCommandSecure =
+        'sudo sharing -a "${widget.entry.path}" -n "$shareName"';
+    final cliCommandGuest =
+        'sudo sharing -a "${widget.entry.path}" -n "$shareName" -g';
     final stopCliCommand = 'sudo sharing -r "$shareName"';
 
     return Dialog(
@@ -1448,7 +1700,9 @@ class _SmbShareDialogState extends State<_SmbShareDialog> {
                 Expanded(
                   child: Text(
                     'Share via SMB',
-                    style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
                 IconButton(
@@ -1458,19 +1712,19 @@ class _SmbShareDialogState extends State<_SmbShareDialog> {
               ],
             ),
             const Divider(height: 24),
-            
+
             // IP Selector
             Row(
               children: [
-                const Text('Select IP Address:', style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text(
+                  'Select IP Address:',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
                 const SizedBox(width: 16),
                 DropdownButton<String>(
                   value: _selectedIp,
                   items: widget.localIps.map((ip) {
-                    return DropdownMenuItem<String>(
-                      value: ip,
-                      child: Text(ip),
-                    );
+                    return DropdownMenuItem<String>(value: ip, child: Text(ip));
                   }).toList(),
                   onChanged: (val) {
                     if (val != null) {
@@ -1486,9 +1740,9 @@ class _SmbShareDialogState extends State<_SmbShareDialog> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: widget.isAlreadyShared 
-                  ? Colors.green.withOpacity(0.1)
-                  : Colors.amber.withOpacity(0.1),
+                color: widget.isAlreadyShared
+                    ? Colors.green.withOpacity(0.1)
+                    : Colors.amber.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
                   color: widget.isAlreadyShared ? Colors.green : Colors.amber,
@@ -1498,17 +1752,21 @@ class _SmbShareDialogState extends State<_SmbShareDialog> {
               child: Row(
                 children: [
                   Icon(
-                    widget.isAlreadyShared ? Icons.check_circle : Icons.warning_amber_rounded,
+                    widget.isAlreadyShared
+                        ? Icons.check_circle
+                        : Icons.warning_amber_rounded,
                     color: widget.isAlreadyShared ? Colors.green : Colors.amber,
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
                       widget.isAlreadyShared
-                        ? 'This path is active inside the shared folder: "$shareName"'
-                        : 'This directory is not shared yet on your Mac.',
+                          ? 'This path is active inside the shared folder: "$shareName"'
+                          : 'This directory is not shared yet on your Mac.',
                       style: TextStyle(
-                        color: widget.isAlreadyShared ? Colors.green[800] : Colors.amber[800],
+                        color: widget.isAlreadyShared
+                            ? Colors.green[800]
+                            : Colors.amber[800],
                         fontSize: 13,
                       ),
                     ),
@@ -1561,11 +1819,20 @@ class _SmbShareDialogState extends State<_SmbShareDialog> {
                           foregroundColor: theme.colorScheme.onPrimary,
                         ),
                         icon: const Icon(Icons.security, size: 16),
-                        label: const Text('Share (Secure)', style: TextStyle(fontSize: 12)),
+                        label: const Text(
+                          'Share (Secure)',
+                          style: TextStyle(fontSize: 12),
+                        ),
                         onPressed: () {
                           _executeSharingCommand(
-                            normalArgs: ['-a', widget.entry.path, '-n', shareName],
-                            privilegeCommand: 'sharing -a \\"${widget.entry.path}\\" -n \\"$shareName\\"',
+                            normalArgs: [
+                              '-a',
+                              widget.entry.path,
+                              '-n',
+                              shareName,
+                            ],
+                            privilegeCommand:
+                                'sharing -a \\"${widget.entry.path}\\" -n \\"$shareName\\"',
                           );
                         },
                       ),
@@ -1578,11 +1845,21 @@ class _SmbShareDialogState extends State<_SmbShareDialog> {
                           foregroundColor: theme.colorScheme.onSecondary,
                         ),
                         icon: const Icon(Icons.people_outline, size: 16),
-                        label: const Text('Share (Guest)', style: TextStyle(fontSize: 12)),
+                        label: const Text(
+                          'Share (Guest)',
+                          style: TextStyle(fontSize: 12),
+                        ),
                         onPressed: () {
                           _executeSharingCommand(
-                            normalArgs: ['-a', widget.entry.path, '-n', shareName, '-g'],
-                            privilegeCommand: 'sharing -a \\"${widget.entry.path}\\" -n \\"$shareName\\" -g',
+                            normalArgs: [
+                              '-a',
+                              widget.entry.path,
+                              '-n',
+                              shareName,
+                              '-g',
+                            ],
+                            privilegeCommand:
+                                'sharing -a \\"${widget.entry.path}\\" -n \\"$shareName\\" -g',
                           );
                         },
                       ),
@@ -1591,14 +1868,19 @@ class _SmbShareDialogState extends State<_SmbShareDialog> {
                 ),
                 const SizedBox(height: 20),
                 const Divider(height: 20),
-                
+
                 Text(
                   'Or copy Terminal Command to Share (macOS):',
-                  style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.bold),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const SizedBox(height: 6),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: theme.colorScheme.surfaceVariant,
                     borderRadius: BorderRadius.circular(6),
@@ -1608,15 +1890,24 @@ class _SmbShareDialogState extends State<_SmbShareDialog> {
                       Expanded(
                         child: Text(
                           cliCommandSecure,
-                          style: const TextStyle(fontFamily: 'monospace', fontSize: 10),
+                          style: const TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 10,
+                          ),
                         ),
                       ),
                       IconButton(
                         icon: const Icon(Icons.copy, size: 16),
                         onPressed: () {
-                          Clipboard.setData(ClipboardData(text: cliCommandSecure));
+                          Clipboard.setData(
+                            ClipboardData(text: cliCommandSecure),
+                          );
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Password protected command copied')),
+                            const SnackBar(
+                              content: Text(
+                                'Password protected command copied',
+                              ),
+                            ),
                           );
                         },
                       ),
@@ -1626,7 +1917,9 @@ class _SmbShareDialogState extends State<_SmbShareDialog> {
                 const SizedBox(height: 12),
                 Text(
                   'Alternatively, enable "File Sharing" in System Settings > Sharing, and add this folder.',
-                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ] else ...[
                 // Stop Share action button
@@ -1652,11 +1945,16 @@ class _SmbShareDialogState extends State<_SmbShareDialog> {
 
                 Text(
                   'Or copy Terminal Command to Stop Sharing (macOS):',
-                  style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.bold),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     color: theme.colorScheme.surfaceVariant,
                     borderRadius: BorderRadius.circular(6),
@@ -1666,15 +1964,24 @@ class _SmbShareDialogState extends State<_SmbShareDialog> {
                       Expanded(
                         child: Text(
                           stopCliCommand,
-                          style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+                          style: const TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 11,
+                          ),
                         ),
                       ),
                       IconButton(
                         icon: const Icon(Icons.copy, size: 16),
                         onPressed: () {
-                          Clipboard.setData(ClipboardData(text: stopCliCommand));
+                          Clipboard.setData(
+                            ClipboardData(text: stopCliCommand),
+                          );
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Remove command copied to clipboard')),
+                            const SnackBar(
+                              content: Text(
+                                'Remove command copied to clipboard',
+                              ),
+                            ),
                           );
                         },
                       ),
@@ -1709,11 +2016,21 @@ class _SmbShareDialogState extends State<_SmbShareDialog> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(height: 4),
                 SelectableText(
                   url,
-                  style: const TextStyle(fontSize: 13, fontFamily: 'monospace', color: Colors.blueAccent),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontFamily: 'monospace',
+                    color: Colors.blueAccent,
+                  ),
                 ),
               ],
             ),

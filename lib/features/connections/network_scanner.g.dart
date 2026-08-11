@@ -6,7 +6,7 @@ part of 'network_scanner.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$networkScannerHash() => r'b49790f4036cd7b67f78e5fbf9cca92508f304af';
+String _$networkScannerHash() => r'8a2309260aa49c8c5059db678737b0f1aadf02ca';
 
 /// Scans the local network for FTP/SFTP/WebDAV services.
 ///

@@ -6,11 +6,9 @@ part of 'settings_provider.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$settingsHash() => r'1aab44c2e05c796651e3ced336032a1671ce74f0';
+String _$settingsHash() => r'2ef8516edc0da800936891a929fbae83fac1efb0';
 
 /// Manages app-level settings: theme mode and locale preference.
-///
-/// Settings are persisted in [FlutterSecureStorage] so they survive app restarts.
 ///
 /// Copied from [Settings].
 @ProviderFor(Settings)

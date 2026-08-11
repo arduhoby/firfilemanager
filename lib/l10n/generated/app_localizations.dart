@@ -218,17 +218,29 @@ abstract class AppLocalizations {
   /// **'Open'**
   String get actionOpen;
 
+  /// No description provided for @actionOpenDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Open with Default Application'**
+  String get actionOpenDefault;
+
+  /// No description provided for @actionOpenWith.
+  ///
+  /// In en, this message translates to:
+  /// **'Open With'**
+  String get actionOpenWith;
+
+  /// No description provided for @actionChooseApplication.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose Application…'**
+  String get actionChooseApplication;
+
   /// No description provided for @actionProperties.
   ///
   /// In en, this message translates to:
   /// **'Properties'**
   String get actionProperties;
-
-  /// No description provided for @actionOpenWith.
-  ///
-  /// In en, this message translates to:
-  /// **'Open'**
-  String get actionOpenWith;
 
   /// No description provided for @actionRevealInFinder.
   ///
@@ -769,6 +781,402 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'This folder is empty'**
   String get emptyFolder;
+
+  /// No description provided for @progressCurrentFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Current file'**
+  String get progressCurrentFile;
+
+  /// No description provided for @progressOverall.
+  ///
+  /// In en, this message translates to:
+  /// **'Overall'**
+  String get progressOverall;
+
+  /// No description provided for @progressRemaining.
+  ///
+  /// In en, this message translates to:
+  /// **'{size} remaining'**
+  String progressRemaining(String size);
+
+  /// No description provided for @progressSpeed.
+  ///
+  /// In en, this message translates to:
+  /// **'{speed}/s'**
+  String progressSpeed(String speed);
+
+  /// No description provided for @progressEta.
+  ///
+  /// In en, this message translates to:
+  /// **'ETA {time}'**
+  String progressEta(String time);
+
+  /// No description provided for @progressEtaCalculating.
+  ///
+  /// In en, this message translates to:
+  /// **'Calculating ETA…'**
+  String get progressEtaCalculating;
+
+  /// No description provided for @syncPreviewTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Smart Synchronization'**
+  String get syncPreviewTitle;
+
+  /// No description provided for @syncSourcePanel.
+  ///
+  /// In en, this message translates to:
+  /// **'Selected panel'**
+  String get syncSourcePanel;
+
+  /// No description provided for @syncDestinationPanel.
+  ///
+  /// In en, this message translates to:
+  /// **'Destination panel'**
+  String get syncDestinationPanel;
+
+  /// No description provided for @syncSelectedSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{selected} of {total} files selected'**
+  String syncSelectedSummary(int selected, int total);
+
+  /// No description provided for @syncSelectChanges.
+  ///
+  /// In en, this message translates to:
+  /// **'Select differences'**
+  String get syncSelectChanges;
+
+  /// No description provided for @syncSelectAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Select all'**
+  String get syncSelectAll;
+
+  /// No description provided for @syncClearAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear all'**
+  String get syncClearAll;
+
+  /// No description provided for @syncStartSelected.
+  ///
+  /// In en, this message translates to:
+  /// **'Synchronize ({count})'**
+  String syncStartSelected(int count);
+
+  /// No description provided for @syncColumnFile.
+  ///
+  /// In en, this message translates to:
+  /// **'File'**
+  String get syncColumnFile;
+
+  /// No description provided for @syncColumnSize.
+  ///
+  /// In en, this message translates to:
+  /// **'Size'**
+  String get syncColumnSize;
+
+  /// No description provided for @syncColumnModified.
+  ///
+  /// In en, this message translates to:
+  /// **'Modified'**
+  String get syncColumnModified;
+
+  /// No description provided for @syncColumnStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Comparison'**
+  String get syncColumnStatus;
+
+  /// No description provided for @syncStatusNew.
+  ///
+  /// In en, this message translates to:
+  /// **'New'**
+  String get syncStatusNew;
+
+  /// No description provided for @syncStatusDifferent.
+  ///
+  /// In en, this message translates to:
+  /// **'Different'**
+  String get syncStatusDifferent;
+
+  /// No description provided for @syncStatusEqual.
+  ///
+  /// In en, this message translates to:
+  /// **'Equal'**
+  String get syncStatusEqual;
+
+  /// No description provided for @syncMissingDestination.
+  ///
+  /// In en, this message translates to:
+  /// **'Not present'**
+  String get syncMissingDestination;
+
+  /// No description provided for @syncNoChanges.
+  ///
+  /// In en, this message translates to:
+  /// **'No differences found. The destination already matches the selected panel.'**
+  String get syncNoChanges;
+
+  /// No description provided for @syncResultSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'Synchronization completed: {updated} files replaced and {created} new files copied.'**
+  String syncResultSummary(int updated, int created);
+
+  /// No description provided for @syncResultFailures.
+  ///
+  /// In en, this message translates to:
+  /// **'Synchronization finished: {updated} files replaced, {created} new files copied, {failed} failed.'**
+  String syncResultFailures(int updated, int created, int failed);
+
+  /// No description provided for @syncCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Synchronization cancelled.'**
+  String get syncCancelled;
+
+  /// No description provided for @syncStatusInaccessible.
+  ///
+  /// In en, this message translates to:
+  /// **'Inaccessible'**
+  String get syncStatusInaccessible;
+
+  /// No description provided for @syncShowSelectedOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Selected only'**
+  String get syncShowSelectedOnly;
+
+  /// No description provided for @syncSearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search files'**
+  String get syncSearchHint;
+
+  /// No description provided for @syncSaveJob.
+  ///
+  /// In en, this message translates to:
+  /// **'Save task…'**
+  String get syncSaveJob;
+
+  /// No description provided for @syncEditJob.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit synchronization task'**
+  String get syncEditJob;
+
+  /// No description provided for @syncJobName.
+  ///
+  /// In en, this message translates to:
+  /// **'Task name'**
+  String get syncJobName;
+
+  /// No description provided for @syncJobNameRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a task name.'**
+  String get syncJobNameRequired;
+
+  /// No description provided for @syncWeekdayRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Select at least one weekday.'**
+  String get syncWeekdayRequired;
+
+  /// No description provided for @syncSchedule.
+  ///
+  /// In en, this message translates to:
+  /// **'Schedule'**
+  String get syncSchedule;
+
+  /// No description provided for @syncScheduleManual.
+  ///
+  /// In en, this message translates to:
+  /// **'Manual'**
+  String get syncScheduleManual;
+
+  /// No description provided for @syncScheduleOnce.
+  ///
+  /// In en, this message translates to:
+  /// **'Once'**
+  String get syncScheduleOnce;
+
+  /// No description provided for @syncScheduleDaily.
+  ///
+  /// In en, this message translates to:
+  /// **'Every day'**
+  String get syncScheduleDaily;
+
+  /// No description provided for @syncScheduleWeekly.
+  ///
+  /// In en, this message translates to:
+  /// **'Every week'**
+  String get syncScheduleWeekly;
+
+  /// No description provided for @syncJobEnabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Automation enabled'**
+  String get syncJobEnabled;
+
+  /// No description provided for @syncRequireWifi.
+  ///
+  /// In en, this message translates to:
+  /// **'Run only on Wi-Fi'**
+  String get syncRequireWifi;
+
+  /// No description provided for @syncAllowMobileData.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow mobile data'**
+  String get syncAllowMobileData;
+
+  /// No description provided for @syncRequireCharging.
+  ///
+  /// In en, this message translates to:
+  /// **'Run only while charging'**
+  String get syncRequireCharging;
+
+  /// No description provided for @weekdayMonday.
+  ///
+  /// In en, this message translates to:
+  /// **'Mon'**
+  String get weekdayMonday;
+
+  /// No description provided for @weekdayTuesday.
+  ///
+  /// In en, this message translates to:
+  /// **'Tue'**
+  String get weekdayTuesday;
+
+  /// No description provided for @weekdayWednesday.
+  ///
+  /// In en, this message translates to:
+  /// **'Wed'**
+  String get weekdayWednesday;
+
+  /// No description provided for @weekdayThursday.
+  ///
+  /// In en, this message translates to:
+  /// **'Thu'**
+  String get weekdayThursday;
+
+  /// No description provided for @weekdayFriday.
+  ///
+  /// In en, this message translates to:
+  /// **'Fri'**
+  String get weekdayFriday;
+
+  /// No description provided for @weekdaySaturday.
+  ///
+  /// In en, this message translates to:
+  /// **'Sat'**
+  String get weekdaySaturday;
+
+  /// No description provided for @weekdaySunday.
+  ///
+  /// In en, this message translates to:
+  /// **'Sun'**
+  String get weekdaySunday;
+
+  /// No description provided for @syncJobSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'\"{name}\" was saved.'**
+  String syncJobSaved(String name);
+
+  /// No description provided for @syncJobNameConflict.
+  ///
+  /// In en, this message translates to:
+  /// **'A task named \"{name}\" already exists.'**
+  String syncJobNameConflict(String name);
+
+  /// No description provided for @syncJobsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Fir SmartSync'**
+  String get syncJobsTitle;
+
+  /// No description provided for @syncJobsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved synchronization tasks'**
+  String get syncJobsSubtitle;
+
+  /// No description provided for @syncJobsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No synchronization tasks have been saved.'**
+  String get syncJobsEmpty;
+
+  /// No description provided for @syncJobsEmptyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Open synchronization from a file panel, choose the files, then select Save task.'**
+  String get syncJobsEmptyHint;
+
+  /// No description provided for @syncRunSucceeded.
+  ///
+  /// In en, this message translates to:
+  /// **'Synchronization completed: {updated} updated, {created} created.'**
+  String syncRunSucceeded(int updated, int created);
+
+  /// No description provided for @syncRunFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Synchronization failed for {failed} files.'**
+  String syncRunFailed(int failed);
+
+  /// No description provided for @syncDeleteJob.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete synchronization task'**
+  String get syncDeleteJob;
+
+  /// No description provided for @syncDeleteJobConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete \"{name}\" and its schedule?'**
+  String syncDeleteJobConfirm(String name);
+
+  /// No description provided for @syncHistoryFor.
+  ///
+  /// In en, this message translates to:
+  /// **'{name} history'**
+  String syncHistoryFor(String name);
+
+  /// No description provided for @syncHistoryEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No runs have been recorded.'**
+  String get syncHistoryEmpty;
+
+  /// No description provided for @syncFailedLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get syncFailedLabel;
+
+  /// No description provided for @syncFailureDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Failure details'**
+  String get syncFailureDetails;
+
+  /// No description provided for @syncRunNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Run now'**
+  String get syncRunNow;
+
+  /// No description provided for @syncHistory.
+  ///
+  /// In en, this message translates to:
+  /// **'History'**
+  String get syncHistory;
 }
 
 class _AppLocalizationsDelegate

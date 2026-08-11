@@ -4,6 +4,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../features/shell_adaptive/shell_adaptive.dart';
 import '../../features/server_mode/server_mode_page.dart';
+import '../../features/file_operations/sync_jobs_page.dart';
 
 part 'app_router.g.dart';
 
@@ -42,6 +43,11 @@ GoRouter appRouter(AppRouterRef ref) {
             builder: (context, state) => const ServerModePage(),
           ),
           GoRoute(
+            path: '/sync',
+            name: 'syncJobs',
+            builder: (context, state) => const SyncJobsPage(),
+          ),
+          GoRoute(
             path: '/settings',
             name: 'settings',
             builder: (context, state) => const SizedBox.shrink(),
@@ -49,10 +55,7 @@ GoRouter appRouter(AppRouterRef ref) {
         ],
       ),
     ],
-    errorBuilder: (context, state) => Scaffold(
-      body: Center(
-        child: Text('Page not found: ${state.error}'),
-      ),
-    ),
+    errorBuilder: (context, state) =>
+        Scaffold(body: Center(child: Text('Page not found: ${state.error}'))),
   );
 }

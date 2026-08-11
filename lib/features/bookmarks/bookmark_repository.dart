@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/persistence/app_preferences.dart';
 
 part 'bookmark_repository.g.dart';
 
@@ -37,7 +37,7 @@ class BookmarkRepository extends _$BookmarkRepository {
   }
 
   Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferences.getInstance();
     final items = prefs.getStringList(_kBookmarksKey) ?? [];
     
     final parsed = <Bookmark>[];
@@ -95,7 +95,7 @@ class BookmarkRepository extends _$BookmarkRepository {
   }
 
   Future<void> _save(List<Bookmark> items) async {
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await AppPreferences.getInstance();
     final stringList = items.map((b) => jsonEncode(b.toJson())).toList();
     await prefs.setStringList(_kBookmarksKey, stringList);
   }
