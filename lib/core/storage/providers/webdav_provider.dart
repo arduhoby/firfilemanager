@@ -7,14 +7,12 @@ import 'package:webdav_client/webdav_client.dart';
 import '../models/connection_profile.dart';
 import '../models/file_entry.dart';
 import '../models/transfer_progress.dart';
+import '../hidden_entry_policy.dart';
 import '../storage_provider.dart';
 
 /// A [StorageProvider] that connects to WebDAV servers using `webdav_client`.
 class WebdavProvider implements StorageProvider {
-  WebdavProvider({
-    required this.profile,
-    required this.password,
-  });
+  WebdavProvider({required this.profile, required this.password});
 
   @override
   final ConnectionProfile profile;
@@ -23,7 +21,8 @@ class WebdavProvider implements StorageProvider {
 
   Client? _client;
   bool _isConnected = false;
-  final StreamController<bool> _connectionController = StreamController<bool>.broadcast();
+  final StreamController<bool> _connectionController =
+      StreamController<bool>.broadcast();
 
   @override
   String get displayName => 'WebDAV: ${profile.name}';
@@ -73,7 +72,10 @@ class WebdavProvider implements StorageProvider {
   @override
   Future<List<FileEntry>> list(String path, [ListOptions? options]) async {
     if (!_isConnected || _client == null) {
-      throw StorageException('Not connected', code: StorageException.networkError);
+      throw StorageException(
+        'Not connected',
+        code: StorageException.networkError,
+      );
     }
 
     try {
@@ -84,7 +86,9 @@ class WebdavProvider implements StorageProvider {
           .where((item) {
             final name = p.basename(item.path ?? '');
             if (name == '.' || name == '..') return false;
-            if (!showHidden && name.startsWith('.')) return false;
+            if (!showHidden && HiddenEntryPolicy.isDotHidden(name)) {
+              return false;
+            }
             return true;
           })
           .map((item) {
@@ -95,7 +99,7 @@ class WebdavProvider implements StorageProvider {
               isDirectory: item.isDir ?? false,
               size: item.size ?? 0,
               modified: item.mTime,
-              hidden: name.startsWith('.'),
+              hidden: HiddenEntryPolicy.isDotHidden(name),
             );
           })
           .toList();
@@ -112,7 +116,10 @@ class WebdavProvider implements StorageProvider {
   @override
   Future<FileEntry> stat(String path) async {
     if (!_isConnected || _client == null) {
-      throw StorageException('Not connected', code: StorageException.networkError);
+      throw StorageException(
+        'Not connected',
+        code: StorageException.networkError,
+      );
     }
 
     try {
@@ -121,7 +128,11 @@ class WebdavProvider implements StorageProvider {
       final entries = await list(parent);
       final entry = entries.where((e) => e.name == name).firstOrNull;
       if (entry == null) {
-        throw StorageException('Not found', code: StorageException.notFound, path: path);
+        throw StorageException(
+          'Not found',
+          code: StorageException.notFound,
+          path: path,
+        );
       }
       return entry;
     } catch (e) {
@@ -136,7 +147,10 @@ class WebdavProvider implements StorageProvider {
   }
 
   @override
-  Stream<TransferProgress> read(String path, {CancelToken? cancelToken}) async* {
+  Stream<TransferProgress> read(
+    String path, {
+    CancelToken? cancelToken,
+  }) async* {
     if (!_isConnected || _client == null) {
       yield TransferProgress(
         operation: TransferOperation.read,
@@ -147,7 +161,9 @@ class WebdavProvider implements StorageProvider {
     }
 
     try {
-      final tempDir = await io.Directory.systemTemp.createTemp('webdav_download_');
+      final tempDir = await io.Directory.systemTemp.createTemp(
+        'webdav_download_',
+      );
       final tempFile = io.File('${tempDir.path}/${p.basename(path)}');
 
       await _client!.read2File(path, tempFile.path);
@@ -187,7 +203,9 @@ class WebdavProvider implements StorageProvider {
     }
 
     try {
-      final tempDir = await io.Directory.systemTemp.createTemp('webdav_upload_');
+      final tempDir = await io.Directory.systemTemp.createTemp(
+        'webdav_upload_',
+      );
       final tempFile = io.File('${tempDir.path}/${p.basename(path)}');
 
       final sink = tempFile.openWrite();
@@ -258,7 +276,11 @@ class WebdavProvider implements StorageProvider {
       controller.add(bytes);
       controller.close();
 
-      await for (final progress in destProvider.write(destPath, controller.stream, cancelToken: cancelToken)) {
+      await for (final progress in destProvider.write(
+        destPath,
+        controller.stream,
+        cancelToken: cancelToken,
+      )) {
         yield progress.copyWith(
           operation: TransferOperation.copy,
           bytesTransferred: bytesTransferred,
@@ -279,7 +301,10 @@ class WebdavProvider implements StorageProvider {
   @override
   Future<void> move(String sourcePath, String destPath) async {
     if (!_isConnected || _client == null) {
-      throw StorageException('Not connected', code: StorageException.networkError);
+      throw StorageException(
+        'Not connected',
+        code: StorageException.networkError,
+      );
     }
 
     try {
@@ -304,7 +329,10 @@ class WebdavProvider implements StorageProvider {
   @override
   Future<void> delete(String path) async {
     if (!_isConnected || _client == null) {
-      throw StorageException('Not connected', code: StorageException.networkError);
+      throw StorageException(
+        'Not connected',
+        code: StorageException.networkError,
+      );
     }
 
     try {
@@ -322,7 +350,10 @@ class WebdavProvider implements StorageProvider {
   @override
   Future<void> mkdir(String path) async {
     if (!_isConnected || _client == null) {
-      throw StorageException('Not connected', code: StorageException.networkError);
+      throw StorageException(
+        'Not connected',
+        code: StorageException.networkError,
+      );
     }
 
     try {
@@ -366,7 +397,11 @@ class WebdavProvider implements StorageProvider {
   String dirname(String path) => p.dirname(path);
 
   @override
-  Future<List<FileEntry>> search(String path, String query, {bool recursive = false}) async {
+  Future<List<FileEntry>> search(
+    String path,
+    String query, {
+    bool recursive = false,
+  }) async {
     final results = <FileEntry>[];
     final queryLower = query.toLowerCase();
 

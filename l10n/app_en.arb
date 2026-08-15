@@ -440,5 +440,61 @@
   "syncFailedLabel": "Failed",
   "syncFailureDetails": "Failure details",
   "syncRunNow": "Run now",
-  "syncHistory": "History"
+  "syncHistory": "History",
+  "panelAdd": "Add panel",
+  "panelClose": "Close panel",
+  "panelNumber": "Panel {number}",
+  "@panelNumber": {
+    "placeholders": { "number": { "type": "int" } }
+  },
+  "targetPanels": "Target panels",
+  "targetSourcePanel": "Source panel",
+  "targetOperationSync": "Sync",
+  "targetSelectedSummary": "{selected} of {total} selected",
+  "@targetSelectedSummary": {
+    "placeholders": {
+      "selected": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "targetSameLocation": "Same location as the source panel",
+  "targetConnectionUnavailable": "Connection is unavailable",
+  "targetLocalPanelRequired": "Select a local destination panel for compression",
+  "targetContinue": "Continue",
+  "multiTransferResultTitle": "Transfer results",
+  "multiTransferSuccess": "Transfer completed for {count} target panels",
+  "@multiTransferSuccess": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "multiTransferPartial": "{successful} of {total} target panels completed successfully",
+  "@multiTransferPartial": {
+    "placeholders": {
+      "successful": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "multiTransferCompleted": "Completed",
+  "multiTransferFailed": "Failed",
+  "multiTransferCancelled": "Cancelled",
+  "multiTransferSkipped": "Not started",
+  "multiTransferSourcePreserved": "The source was preserved because not every target completed successfully.",
+  "multiArchiveResultTitle": "Compression results",
+  "multiArchiveSuccess": "Archive created in {count} target panels",
+  "@multiArchiveSuccess": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "archiveLocalSourceRequired": "Compression currently supports files from local panels only.",
+  "multiSyncResultTitle": "Synchronization results",
+  "multiSyncSummary": "{successful} of {total} target panels completed successfully",
+  "@multiSyncSummary": {
+    "placeholders": {
+      "successful": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "multiSyncCompleted": "Synchronization completed",
+  "multiSyncNoChanges": "Already up to date",
+  "multiSyncFailed": "Synchronization failed",
+  "multiSyncCancelled": "Synchronization cancelled",
+  "multiSyncSkipped": "Not started"
 }

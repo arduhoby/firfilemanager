@@ -259,5 +259,61 @@
   "syncFailedLabel": "Başarısız",
   "syncFailureDetails": "Hata ayrıntıları",
   "syncRunNow": "Şimdi çalıştır",
-  "syncHistory": "Geçmiş"
+  "syncHistory": "Geçmiş",
+  "panelAdd": "Panel ekle",
+  "panelClose": "Paneli kapat",
+  "panelNumber": "Panel {number}",
+  "@panelNumber": {
+    "placeholders": { "number": { "type": "int" } }
+  },
+  "targetPanels": "Hedef paneller",
+  "targetSourcePanel": "Kaynak panel",
+  "targetOperationSync": "Senkron",
+  "targetSelectedSummary": "{total} hedeften {selected} tanesi seçili",
+  "@targetSelectedSummary": {
+    "placeholders": {
+      "selected": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "targetSameLocation": "Kaynak panelle aynı konum",
+  "targetConnectionUnavailable": "Bağlantı kullanılamıyor",
+  "targetLocalPanelRequired": "Sıkıştırma için yerel bir hedef panel seçin",
+  "targetContinue": "Devam et",
+  "multiTransferResultTitle": "Aktarım sonuçları",
+  "multiTransferSuccess": "Aktarım {count} hedef panel için tamamlandı",
+  "@multiTransferSuccess": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "multiTransferPartial": "{total} hedef panelden {successful} tanesi başarıyla tamamlandı",
+  "@multiTransferPartial": {
+    "placeholders": {
+      "successful": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "multiTransferCompleted": "Tamamlandı",
+  "multiTransferFailed": "Başarısız",
+  "multiTransferCancelled": "İptal edildi",
+  "multiTransferSkipped": "Başlatılmadı",
+  "multiTransferSourcePreserved": "Bütün hedefler başarıyla tamamlanmadığı için kaynak korundu.",
+  "multiArchiveResultTitle": "Sıkıştırma sonuçları",
+  "multiArchiveSuccess": "Arşiv {count} hedef panelde oluşturuldu",
+  "@multiArchiveSuccess": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "archiveLocalSourceRequired": "Sıkıştırma şu anda yalnızca yerel paneldeki dosyaları destekliyor.",
+  "multiSyncResultTitle": "Senkron sonuçları",
+  "multiSyncSummary": "{total} hedef panelden {successful} tanesi başarıyla tamamlandı",
+  "@multiSyncSummary": {
+    "placeholders": {
+      "successful": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "multiSyncCompleted": "Senkron tamamlandı",
+  "multiSyncNoChanges": "Zaten güncel",
+  "multiSyncFailed": "Senkron başarısız",
+  "multiSyncCancelled": "Senkron iptal edildi",
+  "multiSyncSkipped": "Başlatılmadı"
 }

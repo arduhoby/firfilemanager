@@ -7,7 +7,7 @@ part of 'connection_repository.dart';
 // **************************************************************************
 
 String _$connectionRepositoryHash() =>
-    r'90410379a42c7e5089e9719664543af8efede05b';
+    r'222bd88a4bfded31aafaf17cc1d08e6a4ee2dda5';
 
 /// Repository for managing saved connection profiles.
 ///

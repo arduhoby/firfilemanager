@@ -601,4 +601,106 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get syncHistory => 'History';
+
+  @override
+  String get panelAdd => 'Add panel';
+
+  @override
+  String get panelClose => 'Close panel';
+
+  @override
+  String panelNumber(int number) {
+    return 'Panel $number';
+  }
+
+  @override
+  String get targetPanels => 'Target panels';
+
+  @override
+  String get targetSourcePanel => 'Source panel';
+
+  @override
+  String get targetOperationSync => 'Sync';
+
+  @override
+  String targetSelectedSummary(int selected, int total) {
+    return '$selected of $total selected';
+  }
+
+  @override
+  String get targetSameLocation => 'Same location as the source panel';
+
+  @override
+  String get targetConnectionUnavailable => 'Connection is unavailable';
+
+  @override
+  String get targetLocalPanelRequired =>
+      'Select a local destination panel for compression';
+
+  @override
+  String get targetContinue => 'Continue';
+
+  @override
+  String get multiTransferResultTitle => 'Transfer results';
+
+  @override
+  String multiTransferSuccess(int count) {
+    return 'Transfer completed for $count target panels';
+  }
+
+  @override
+  String multiTransferPartial(int successful, int total) {
+    return '$successful of $total target panels completed successfully';
+  }
+
+  @override
+  String get multiTransferCompleted => 'Completed';
+
+  @override
+  String get multiTransferFailed => 'Failed';
+
+  @override
+  String get multiTransferCancelled => 'Cancelled';
+
+  @override
+  String get multiTransferSkipped => 'Not started';
+
+  @override
+  String get multiTransferSourcePreserved =>
+      'The source was preserved because not every target completed successfully.';
+
+  @override
+  String get multiArchiveResultTitle => 'Compression results';
+
+  @override
+  String multiArchiveSuccess(int count) {
+    return 'Archive created in $count target panels';
+  }
+
+  @override
+  String get archiveLocalSourceRequired =>
+      'Compression currently supports files from local panels only.';
+
+  @override
+  String get multiSyncResultTitle => 'Synchronization results';
+
+  @override
+  String multiSyncSummary(int successful, int total) {
+    return '$successful of $total target panels completed successfully';
+  }
+
+  @override
+  String get multiSyncCompleted => 'Synchronization completed';
+
+  @override
+  String get multiSyncNoChanges => 'Already up to date';
+
+  @override
+  String get multiSyncFailed => 'Synchronization failed';
+
+  @override
+  String get multiSyncCancelled => 'Synchronization cancelled';
+
+  @override
+  String get multiSyncSkipped => 'Not started';
 }

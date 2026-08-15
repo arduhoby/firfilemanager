@@ -20,14 +20,16 @@ import '../../core/storage/storage_provider_service.dart';
 import '../../core/theme/glass_container.dart';
 import '../connections/connections_sidebar.dart';
 import '../connections/connection_repository.dart';
+import '../file_operations/archive_service.dart';
 import '../file_operations/file_operations_service.dart';
 import '../file_operations/file_operations_state.dart';
+import '../file_operations/operation_completion_sound_policy.dart';
 import 'file_operations_actions.dart';
 import 'file_panel.dart';
-import 'flying_file_animation.dart';
+import 'panel_layout.dart';
 import 'panel_controller.dart';
 
-// ─── Panel split ratio provider ─────────────────────────────────────────────
+// Panel split ratio provider
 final panelSplitRatioProvider =
     StateNotifierProvider<_PanelSplitRatioNotifier, double>(
       (ref) => _PanelSplitRatioNotifier(),
@@ -52,7 +54,7 @@ class _PanelSplitRatioNotifier extends StateNotifier<double> {
   }
 }
 
-// ─── Shell ───────────────────────────────────────────────────────────────────
+// Shell
 
 class DualPaneShell extends ConsumerStatefulWidget {
   const DualPaneShell({required this.child, super.key});
@@ -67,8 +69,14 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(panelControllerProvider.notifier).initialize();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        await ref.read(panelWorkspaceProvider.notifier).restorePanelCount();
+      } catch (error) {
+        debugPrint('Panel count could not be restored: $error');
+      }
+      if (!mounted) return;
+      await ref.read(panelControllerProvider.notifier).initialize();
     });
   }
 
@@ -80,18 +88,14 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
     final clipboard = ref.watch(fileClipboardProvider);
 
     ref.listen<TransferProgress?>(operationProgressProvider, (previous, next) {
-      // Providers may report completion for nested folders as well. Only the
-      // operation-level completion (the final item count) should make a sound.
-      final isOperationComplete =
-          next?.state == TransferState.completed &&
-          (next?.totalFiles ?? 0) > 0 &&
-          (next?.filesTransferred ?? 0) >= (next?.totalFiles ?? 0);
-      if (previous?.state != TransferState.completed && isOperationComplete) {
-        if (ref.read(settingsProvider).playAnimationSounds) {
-          final player = audioplayers.AudioPlayer();
-          player.play(audioplayers.AssetSource('sounds/success.wav'));
-          player.onPlayerComplete.listen((_) => player.dispose());
-        }
+      if (OperationCompletionSoundPolicy.shouldPlay(
+        enabled: ref.read(settingsProvider).playAnimationSounds,
+        previous: previous,
+        next: next,
+      )) {
+        final player = audioplayers.AudioPlayer();
+        player.play(audioplayers.AssetSource('sounds/success.wav'));
+        player.onPlayerComplete.listen((_) => player.dispose());
       }
     });
 
@@ -148,10 +152,14 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
           ),
           SwitchPanelIntent: CallbackAction<SwitchPanelIntent>(
             onInvoke: (_) {
-              final active = ref.read(activePanelProvider);
+              final workspace = ref.read(panelWorkspaceProvider);
+              final activeIndex = workspace.panelOrder.indexOf(
+                workspace.activePanelId,
+              );
+              final nextIndex = (activeIndex + 1) % workspace.panelOrder.length;
               ref
-                  .read(activePanelProvider.notifier)
-                  .setActive(active == PanelSide.a ? PanelSide.b : PanelSide.a);
+                  .read(panelWorkspaceProvider.notifier)
+                  .setActive(workspace.panelOrder[nextIndex]);
               return null;
             },
           ),
@@ -165,19 +173,13 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
           ),
           SelectAllIntent: CallbackAction<SelectAllIntent>(
             onInvoke: (_) {
-              if (activeSide == PanelSide.a) {
-                ref.read(panelAProvider.notifier).selectAll();
-              } else {
-                ref.read(panelBProvider.notifier).selectAll();
-              }
+              ref.read(panelWorkspaceProvider.notifier).selectAll(activeSide);
               return null;
             },
           ),
           CopyClipboardIntent: CallbackAction<CopyClipboardIntent>(
             onInvoke: (_) {
-              final state = activeSide == PanelSide.a
-                  ? ref.read(panelAProvider)
-                  : ref.read(panelBProvider);
+              final state = ref.read(panelStateProvider(activeSide));
               ref
                   .read(fileOperationsActionsProvider.notifier)
                   .copyToClipboard(activeSide, state.activeTab.selectedEntries);
@@ -186,9 +188,7 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
           ),
           CutClipboardIntent: CallbackAction<CutClipboardIntent>(
             onInvoke: (_) {
-              final state = activeSide == PanelSide.a
-                  ? ref.read(panelAProvider)
-                  : ref.read(panelBProvider);
+              final state = ref.read(panelStateProvider(activeSide));
               ref
                   .read(fileOperationsActionsProvider.notifier)
                   .cutToClipboard(activeSide, state.activeTab.selectedEntries);
@@ -211,11 +211,9 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
           ),
           ToggleHiddenIntent: CallbackAction<ToggleHiddenIntent>(
             onInvoke: (_) {
-              if (activeSide == PanelSide.a) {
-                ref.read(panelAProvider.notifier).toggleHidden();
-              } else {
-                ref.read(panelBProvider.notifier).toggleHidden();
-              }
+              ref
+                  .read(panelWorkspaceProvider.notifier)
+                  .toggleHidden(activeSide);
               return null;
             },
           ),
@@ -224,9 +222,9 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
           backgroundColor: Colors.transparent,
           body: Stack(
             children: [
-              // ── Wallpaper background ──────────────────────────────────────
+              // Wallpaper background
               _buildWallpaper(context),
-              // ── Main content ─────────────────────────────────────────────
+              // Main content
               Column(
                 children: [
                   _buildTopBar(context, l10n, activeSide),
@@ -277,14 +275,14 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
     );
   }
 
-  /// Builds the wallpaper background — a full-screen image with a frosted-glass overlay.
+  /// Builds the wallpaper background with a full-screen frosted-glass overlay.
   Widget _buildWallpaper(BuildContext context) {
     final settings = ref.watch(settingsProvider);
     final bgPath = settings.backgroundImagePath;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     if (bgPath == null) {
-      // No wallpaper – use the normal Scaffold background colour
+      // No wallpaper; use the normal Scaffold background colour.
       return Container(color: Theme.of(context).scaffoldBackgroundColor);
     }
 
@@ -311,11 +309,11 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
   Widget _buildTopBar(
     BuildContext context,
     gen.AppLocalizations l10n,
-    PanelSide activeSide,
+    PanelId activeSide,
   ) {
     final theme = Theme.of(context);
-    final leftState = ref.watch(panelAProvider);
-    final rightState = ref.watch(panelBProvider);
+    final leftState = ref.watch(panelStateProvider(PanelId.a));
+    final rightState = ref.watch(panelStateProvider(PanelId.b));
 
     return ClipRect(
       child: BackdropFilter(
@@ -377,7 +375,13 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
                   ),
                 ),
                 child: Text(
-                  activeSide == PanelSide.a ? l10n.panelLeft : l10n.panelRight,
+                  l10n.panelNumber(
+                    ref
+                            .watch(panelWorkspaceProvider)
+                            .panelOrder
+                            .indexOf(activeSide) +
+                        1,
+                  ),
                   style: theme.textTheme.labelSmall?.copyWith(
                     color: theme.colorScheme.primary,
                     fontWeight: FontWeight.w600,
@@ -396,7 +400,7 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
   Widget _buildMountedDriveShortcuts(
     BuildContext context,
     ThemeData theme,
-    PanelSide activeSide,
+    PanelId activeSide,
   ) {
     final registry = ref.watch(storageProviderRegistryProvider);
     final connections = ref.watch(connectionRepositoryProvider);
@@ -447,9 +451,7 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
 
     if (activeMounts.isEmpty) return const SizedBox.shrink();
 
-    final activeState = activeSide == PanelSide.a
-        ? ref.watch(panelAProvider)
-        : ref.watch(panelBProvider);
+    final activeState = ref.watch(panelStateProvider(activeSide));
     final currentProviderId = activeState.activeTab.providerId ?? 'local';
 
     return Container(
@@ -559,14 +561,12 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
   Widget _buildFunctionBar(
     BuildContext context,
     gen.AppLocalizations l10n,
-    PanelSide activeSide,
+    PanelId activeSide,
     ClipboardState? clipboard,
   ) {
     final theme = Theme.of(context);
     final actions = ref.read(fileOperationsActionsProvider.notifier);
-    final activeState = activeSide == PanelSide.a
-        ? ref.watch(panelAProvider)
-        : ref.watch(panelBProvider);
+    final activeState = ref.watch(panelStateProvider(activeSide));
     final hasSelection = activeState.activeTab.hasSelection;
 
     Widget actionButton({
@@ -877,6 +877,9 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
                         tooltip: l10n.actionCancel,
                         onPressed: () {
                           ref
+                              .read(archiveServiceProvider.notifier)
+                              .cancelCurrentOperation();
+                          ref
                               .read(fileOperationsServiceProvider.notifier)
                               .cancelOperation();
                         },
@@ -1034,7 +1037,7 @@ class _DualPaneShellState extends ConsumerState<DualPaneShell> {
   }
 }
 
-// ─── Resizable dual panel ────────────────────────────────────────────────────
+// Resizable dual panel
 
 class _ResizablePanels extends ConsumerStatefulWidget {
   @override
@@ -1057,12 +1060,19 @@ class _ResizablePanelsState extends ConsumerState<_ResizablePanels> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final settings = ref.watch(settingsProvider);
+    final workspace = ref.watch(panelWorkspaceProvider);
 
     if (settings.singlePanelMode) {
       final activeSide = ref.watch(activePanelProvider);
-      return activeSide == PanelSide.a
-          ? const FilePanel(side: PanelSide.a)
-          : const FilePanel(side: PanelSide.b);
+      return FilePanel(
+        key: ValueKey('file-panel-${activeSide.value}'),
+        side: activeSide,
+      );
+    }
+
+    final panelOrder = workspace.panelOrder;
+    if (panelOrder.length > 2) {
+      return _buildPanelGrid(theme, panelOrder);
     }
 
     return LayoutBuilder(
@@ -1075,7 +1085,10 @@ class _ResizablePanelsState extends ConsumerState<_ResizablePanels> {
           children: [
             SizedBox(
               width: leftWidth,
-              child: FilePanel(side: PanelSide.a),
+              child: FilePanel(
+                key: ValueKey('file-panel-${panelOrder.first.value}'),
+                side: panelOrder.first,
+              ),
             ),
             MouseRegion(
               cursor: SystemMouseCursors.resizeColumn,
@@ -1113,11 +1126,60 @@ class _ResizablePanelsState extends ConsumerState<_ResizablePanels> {
             ),
             SizedBox(
               width: rightWidth,
-              child: FilePanel(side: PanelSide.b),
+              child: FilePanel(
+                key: ValueKey('file-panel-${panelOrder.last.value}'),
+                side: panelOrder.last,
+              ),
             ),
           ],
         );
       },
+    );
+  }
+
+  Widget _buildPanelGrid(ThemeData theme, List<PanelId> panelOrder) {
+    final layout = PanelLayoutSpec.forPanels(panelOrder);
+    final rows = <Widget>[];
+
+    for (var rowIndex = 0; rowIndex < layout.rows.length; rowIndex++) {
+      if (rowIndex > 0) {
+        rows.add(_gridDivider(theme, Axis.horizontal));
+      }
+
+      final panels = <Widget>[];
+      for (
+        var panelIndex = 0;
+        panelIndex < layout.rows[rowIndex].length;
+        panelIndex++
+      ) {
+        if (panelIndex > 0) {
+          panels.add(_gridDivider(theme, Axis.vertical));
+        }
+        final panelId = layout.rows[rowIndex][panelIndex];
+        panels.add(
+          Expanded(
+            child: FilePanel(
+              key: ValueKey('file-panel-${panelId.value}'),
+              side: panelId,
+            ),
+          ),
+        );
+      }
+
+      rows.add(Expanded(child: Row(children: panels)));
+    }
+
+    return Column(children: rows);
+  }
+
+  Widget _gridDivider(ThemeData theme, Axis axis) {
+    final isDark = theme.brightness == Brightness.dark;
+    return SizedBox(
+      width: axis == Axis.vertical ? _kDividerWidth : null,
+      height: axis == Axis.horizontal ? _kDividerWidth : null,
+      child: ColoredBox(
+        color: isDark ? const Color(0x22FFFFFF) : const Color(0x18000000),
+      ),
     );
   }
 }
@@ -1261,12 +1323,12 @@ class _UiverseActionButtonState extends State<_UiverseActionButton> {
     // Default (not hovered) backgrounds: light mode = white, dark mode = black
     final defaultBgColor = isDark ? Colors.black : Colors.white;
 
-    // Hover durumunda doluluk rengi (turkuaz), değilse tema rengi (siyah/beyaz)
+    // Hover durumunda doluluk rengi turkuaz, değilse tema rengidir.
     final bgColor = active
         ? (_isHovered ? btnColor : defaultBgColor)
         : Colors.transparent;
 
-    // Hover durumunda yazının/ikonun rengi zıt renge dönsün, değilse turkuaz
+    // Hover durumunda yazı ve ikon zıt renge döner, değilse turkuaz kalır.
     final contentColor = active
         ? (_isHovered ? (isDark ? Colors.black : Colors.white) : btnColor)
         : widget.theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4);
@@ -1315,7 +1377,7 @@ class _UiverseActionButtonState extends State<_UiverseActionButton> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Hover durumunda ikonu sağa 4px kaydıran animasyon
+                  // Hover durumunda ikonu sağa 4px kaydıran animasyon.
                   AnimatedPadding(
                     duration: const Duration(milliseconds: 300),
                     curve: Curves.easeOutCubic,

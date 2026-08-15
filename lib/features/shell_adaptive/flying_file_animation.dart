@@ -1,26 +1,13 @@
-import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 
 class FlyingFileAnimation {
-
   static void show(
     BuildContext context, {
     required Offset start,
     required Offset end,
     required IconData icon,
     required Color color,
-    bool playSound = true,
   }) {
-    if (playSound) {
-      final player = AudioPlayer();
-      if (icon == Icons.delete_outline || icon == Icons.delete) {
-        player.play(AssetSource('sounds/trash.wav'));
-      } else {
-        player.play(AssetSource('sounds/copy.wav'));
-      }
-      player.onPlayerComplete.listen((_) => player.dispose());
-    }
-
     final overlay = Overlay.of(context);
     late OverlayEntry entry;
 
@@ -40,9 +27,11 @@ class FlyingFileAnimation {
             // Add a slight arc to the y coordinate for a "flying" effect
             final arc = (value - 0.5) * (value - 0.5) * -200 + 50;
             final y = start.dy + (end.dy - start.dy) * value - arc;
-            
+
             // Fade out at the end
-            final opacity = value > 0.8 ? ((1.0 - value) * 5).clamp(0.0, 1.0) : 1.0;
+            final opacity = value > 0.8
+                ? ((1.0 - value) * 5).clamp(0.0, 1.0)
+                : 1.0;
 
             return Positioned(
               left: x - 24, // Center the 48x48 icon
@@ -53,14 +42,14 @@ class FlyingFileAnimation {
                   child: Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: color.withOpacity(0.2),
+                      color: color.withValues(alpha: 0.2),
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: color.withOpacity(0.3),
+                          color: color.withValues(alpha: 0.3),
                           blurRadius: 12,
                           spreadRadius: 2,
-                        )
+                        ),
                       ],
                     ),
                     child: Icon(icon, color: color, size: 24),

@@ -1,20 +1,37 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../core/persistence/app_preferences.dart';
 import '../../core/storage/models/file_entry.dart';
 import '../../core/storage/models/transfer_progress.dart';
 
 part 'file_operations_state.g.dart';
 
-/// Identifies which panel (A or B)
-enum PanelSide { a, b }
+@immutable
+class PanelId {
+  const PanelId(this.value);
 
-/// Sort field for file listing
+  static const a = PanelId('panel-a');
+  static const b = PanelId('panel-b');
+
+  final String value;
+
+  @override
+  bool operator ==(Object other) => other is PanelId && other.value == value;
+
+  @override
+  int get hashCode => value.hashCode;
+
+  @override
+  String toString() => value;
+}
+
 enum SortField { name, date, size, type }
 
-/// Sort direction
 enum SortDirection { ascending, descending }
 
-/// State for a single file panel (A or B)
 class TabState {
   const TabState({
     required this.id,
@@ -46,14 +63,11 @@ class TabState {
   final List<String> history;
   final int historyIndex;
 
-  /// Selected entries (filtered from entries by selectedPaths)
   List<FileEntry> get selectedEntries =>
-      entries.where((e) => selectedPaths.contains(e.path)).toList();
+      entries.where((entry) => selectedPaths.contains(entry.path)).toList();
 
-  /// Whether any entries are selected
   bool get hasSelection => selectedPaths.isNotEmpty;
 
-  /// Number of selected items
   int get selectionCount => selectedPaths.length;
 
   TabState copyWith({
@@ -72,7 +86,7 @@ class TabState {
     int? historyIndex,
   }) {
     return TabState(
-      id: this.id,
+      id: id,
       currentPath: currentPath ?? this.currentPath,
       providerId: providerId ?? this.providerId,
       entries: entries ?? this.entries,
@@ -92,6 +106,13 @@ class TabState {
 class PanelState {
   const PanelState({required this.tabs, this.activeTabIndex = 0});
 
+  factory PanelState.initial({
+    String path = '/',
+    String providerId = 'local',
+  }) => PanelState(
+    tabs: [TabState(id: 'tab_0', currentPath: path, providerId: providerId)],
+  );
+
   final List<TabState> tabs;
   final int activeTabIndex;
 
@@ -107,170 +128,412 @@ class PanelState {
   }
 }
 
-/// State for panel A
+class PanelWorkspaceState {
+  const PanelWorkspaceState({
+    required this.panelOrder,
+    required this.panels,
+    required this.activePanelId,
+    required this.nextPanelSequence,
+  });
+
+  factory PanelWorkspaceState.initial() => PanelWorkspaceState(
+    panelOrder: const [PanelId.a, PanelId.b],
+    panels: {PanelId.a: PanelState.initial(), PanelId.b: PanelState.initial()},
+    activePanelId: PanelId.a,
+    nextPanelSequence: 2,
+  );
+
+  static const minPanelCount = 2;
+  static const maxPanelCount = 5;
+
+  final List<PanelId> panelOrder;
+  final Map<PanelId, PanelState> panels;
+  final PanelId activePanelId;
+  final int nextPanelSequence;
+
+  int get panelCount => panelOrder.length;
+  bool get canAddPanel => panelCount < maxPanelCount;
+  bool get canRemovePanel => panelCount > minPanelCount;
+  List<PanelId> get destinationPanelIds => panelOrder
+      .where((panelId) => panelId != activePanelId)
+      .toList(growable: false);
+
+  PanelState panel(PanelId panelId) {
+    final panel = panels[panelId];
+    if (panel == null) {
+      throw StateError('Unknown panel: $panelId');
+    }
+    return panel;
+  }
+
+  PanelWorkspaceState copyWith({
+    List<PanelId>? panelOrder,
+    Map<PanelId, PanelState>? panels,
+    PanelId? activePanelId,
+    int? nextPanelSequence,
+  }) {
+    return PanelWorkspaceState(
+      panelOrder: panelOrder ?? this.panelOrder,
+      panels: panels ?? this.panels,
+      activePanelId: activePanelId ?? this.activePanelId,
+      nextPanelSequence: nextPanelSequence ?? this.nextPanelSequence,
+    );
+  }
+}
+
+final panelStateProvider = Provider.family<PanelState, PanelId>((ref, panelId) {
+  return ref.watch(
+    panelWorkspaceProvider.select(
+      (workspace) =>
+          workspace.panels[panelId] ??
+          const PanelState(
+            tabs: [TabState(id: 'removed', currentPath: '/')],
+          ),
+    ),
+  );
+});
+
+final activePanelProvider = Provider<PanelId>((ref) {
+  return ref.watch(
+    panelWorkspaceProvider.select((workspace) => workspace.activePanelId),
+  );
+});
+
 @Riverpod(keepAlive: true)
-class PanelA extends _$PanelA {
+class PanelWorkspace extends _$PanelWorkspace {
+  static const _panelCountPreferenceKey = 'workspace_panel_count';
+
+  bool _persistenceReady = false;
+
   @override
-  PanelState build() {
-    return const PanelState(
-      tabs: [TabState(id: 'tab_0', currentPath: '/')],
+  PanelWorkspaceState build() => PanelWorkspaceState.initial();
+
+  Future<void> restorePanelCount() async {
+    final preferences = await AppPreferences.getInstance();
+    final savedCount = int.tryParse(
+      preferences.getString(_panelCountPreferenceKey) ?? '',
+    );
+    if (savedCount != null) {
+      setPanelCount(savedCount, persist: false);
+    }
+    _persistenceReady = true;
+  }
+
+  Future<void> persistPanelCount() async {
+    final preferences = await AppPreferences.getInstance();
+    await preferences.setString(
+      _panelCountPreferenceKey,
+      state.panelCount.toString(),
     );
   }
 
-  void _updateActiveTab(TabState Function(TabState tab) updater) {
-    if (state.tabs.isEmpty) return;
-    final newTabs = List<TabState>.from(state.tabs);
-    newTabs[state.activeTabIndex] = updater(state.activeTab);
-    state = state.copyWith(tabs: newTabs);
+  void setPanelCount(int panelCount, {bool persist = true}) {
+    final previousActivePanelId = state.activePanelId;
+    final targetCount = panelCount.clamp(
+      PanelWorkspaceState.minPanelCount,
+      PanelWorkspaceState.maxPanelCount,
+    );
+
+    while (state.panelCount < targetCount) {
+      _addPanel(path: '/', providerId: 'local');
+    }
+    while (state.panelCount > targetCount) {
+      _removePanel(state.panelOrder.last);
+    }
+
+    state = state.copyWith(
+      activePanelId: state.panels.containsKey(previousActivePanelId)
+          ? previousActivePanelId
+          : state.panelOrder.first,
+    );
+    if (persist) _persistPanelCountIfReady();
   }
 
-  void setPath(String path) {
-    _updateActiveTab((t) {
-      if (t.currentPath == path) return t;
-      final newHistory = t.historyIndex >= 0 
-          ? t.history.sublist(0, t.historyIndex + 1) 
-          : <String>[t.currentPath];
-      newHistory.add(path);
-      return t.copyWith(
+  PanelId addPanel({String path = '/', String providerId = 'local'}) {
+    if (!state.canAddPanel) {
+      throw StateError(
+        'A maximum of ${PanelWorkspaceState.maxPanelCount} panels is supported.',
+      );
+    }
+
+    final panelId = _addPanel(path: path, providerId: providerId);
+    _persistPanelCountIfReady();
+    return panelId;
+  }
+
+  PanelId _addPanel({required String path, required String providerId}) {
+    final sequence = state.nextPanelSequence + 1;
+    final panelId = PanelId('panel-$sequence');
+    state = state.copyWith(
+      panelOrder: [...state.panelOrder, panelId],
+      panels: {
+        ...state.panels,
+        panelId: PanelState.initial(path: path, providerId: providerId),
+      },
+      activePanelId: panelId,
+      nextPanelSequence: sequence,
+    );
+    return panelId;
+  }
+
+  bool removePanel(PanelId panelId) {
+    if (!state.canRemovePanel || !state.panels.containsKey(panelId)) {
+      return false;
+    }
+
+    _removePanel(panelId);
+    _persistPanelCountIfReady();
+    return true;
+  }
+
+  void _removePanel(PanelId panelId) {
+    final panelOrder = [...state.panelOrder]..remove(panelId);
+    final panels = Map<PanelId, PanelState>.from(state.panels)..remove(panelId);
+    state = state.copyWith(
+      panelOrder: panelOrder,
+      panels: panels,
+      activePanelId: state.activePanelId == panelId
+          ? panelOrder.first
+          : state.activePanelId,
+    );
+  }
+
+  void _persistPanelCountIfReady() {
+    if (_persistenceReady) unawaited(persistPanelCount());
+  }
+
+  void reorderPanels(List<PanelId> panelOrder) {
+    if (panelOrder.length != state.panelOrder.length ||
+        panelOrder.toSet().length != panelOrder.length ||
+        !panelOrder.toSet().containsAll(state.panelOrder)) {
+      throw ArgumentError('Panel order must contain every panel exactly once.');
+    }
+    state = state.copyWith(panelOrder: List.unmodifiable(panelOrder));
+  }
+
+  void setActive(PanelId panelId) {
+    if (state.panels.containsKey(panelId)) {
+      state = state.copyWith(activePanelId: panelId);
+    }
+  }
+
+  void setPath(PanelId panelId, String path) {
+    _updateActiveTab(panelId, (tab) {
+      if (tab.currentPath == path) return tab;
+      final history = tab.historyIndex >= 0
+          ? tab.history.sublist(0, tab.historyIndex + 1)
+          : <String>[tab.currentPath];
+      history.add(path);
+      return tab.copyWith(
         currentPath: path,
         selectedPaths: {},
         error: null,
-        history: newHistory,
-        historyIndex: newHistory.length - 1,
+        history: history,
+        historyIndex: history.length - 1,
       );
     });
   }
 
-  void setProviderAndPath(String providerId, String path) {
-    _updateActiveTab((t) {
-      if (t.currentPath == path && t.providerId == providerId) return t;
-      final newHistory = t.historyIndex >= 0 
-          ? t.history.sublist(0, t.historyIndex + 1) 
-          : <String>[t.currentPath];
-      newHistory.add(path);
-      return t.copyWith(
+  void setProviderAndPath(PanelId panelId, String providerId, String path) {
+    _updateActiveTab(panelId, (tab) {
+      if (tab.currentPath == path && tab.providerId == providerId) return tab;
+      final history = tab.historyIndex >= 0
+          ? tab.history.sublist(0, tab.historyIndex + 1)
+          : <String>[tab.currentPath];
+      history.add(path);
+      return tab.copyWith(
         providerId: providerId,
         currentPath: path,
         selectedPaths: {},
         error: null,
-        history: newHistory,
-        historyIndex: newHistory.length - 1,
+        history: history,
+        historyIndex: history.length - 1,
       );
     });
   }
 
-  void goBack() {
-    _updateActiveTab((t) {
-      if (t.historyIndex > 0) {
-        final newIndex = t.historyIndex - 1;
-        return t.copyWith(
-          currentPath: t.history[newIndex],
-          selectedPaths: {},
-          error: null,
-          historyIndex: newIndex,
-        );
-      }
-      return t;
+  void goBack(PanelId panelId) {
+    _updateActiveTab(panelId, (tab) {
+      if (tab.historyIndex <= 0) return tab;
+      final historyIndex = tab.historyIndex - 1;
+      return tab.copyWith(
+        currentPath: tab.history[historyIndex],
+        selectedPaths: {},
+        error: null,
+        historyIndex: historyIndex,
+      );
     });
   }
 
-  void goForward() {
-    _updateActiveTab((t) {
-      if (t.historyIndex >= 0 && t.historyIndex < t.history.length - 1) {
-        final newIndex = t.historyIndex + 1;
-        return t.copyWith(
-          currentPath: t.history[newIndex],
-          selectedPaths: {},
-          error: null,
-          historyIndex: newIndex,
-        );
+  void goForward(PanelId panelId) {
+    _updateActiveTab(panelId, (tab) {
+      if (tab.historyIndex < 0 || tab.historyIndex >= tab.history.length - 1) {
+        return tab;
       }
-      return t;
+      final historyIndex = tab.historyIndex + 1;
+      return tab.copyWith(
+        currentPath: tab.history[historyIndex],
+        selectedPaths: {},
+        error: null,
+        historyIndex: historyIndex,
+      );
     });
   }
 
-  void setEntries(List<FileEntry> entries) {
+  void setEntries(PanelId panelId, List<FileEntry> entries) {
+    final panel = state.panel(panelId);
     final sorted = _sortEntries(
       entries,
-      state.activeTab.sortField,
-      state.activeTab.sortDirection,
+      panel.activeTab.sortField,
+      panel.activeTab.sortDirection,
     );
-    _updateActiveTab((t) => t.copyWith(entries: sorted, isLoading: false));
-  }
-
-  void setLoading(bool loading) {
-    _updateActiveTab((t) => t.copyWith(isLoading: loading));
-  }
-
-  void setSearchQuery(String? query) {
-    if (state.tabs.isEmpty) return;
-    final tabs = List<TabState>.from(state.tabs);
-    tabs[state.activeTabIndex] = tabs[state.activeTabIndex].copyWith(
-      searchQuery: query,
-      clearSearchQuery: query == null,
-    );
-    state = state.copyWith(tabs: tabs);
-  }
-
-  void setError(String? error) {
-    _updateActiveTab((t) => t.copyWith(error: error, isLoading: false));
-  }
-
-  void selectEntry(String path) {
-    _updateActiveTab((t) => t.copyWith(selectedPaths: {path}));
-  }
-
-  void toggleSelection(String path) {
-    final newSelection = Set<String>.from(state.activeTab.selectedPaths);
-    if (newSelection.contains(path)) {
-      newSelection.remove(path);
-    } else {
-      newSelection.add(path);
-    }
-    _updateActiveTab((t) => t.copyWith(selectedPaths: newSelection));
-  }
-
-  void selectRange(String from, String to) {
-    final entries = state.activeTab.entries;
-    final fromIndex = entries.indexWhere((e) => e.path == from);
-    final toIndex = entries.indexWhere((e) => e.path == to);
-    if (fromIndex == -1 || toIndex == -1) return;
-
-    final start = fromIndex < toIndex ? fromIndex : toIndex;
-    final end = fromIndex < toIndex ? toIndex : fromIndex;
-
-    final newSelection = <String>{};
-    for (var i = start; i <= end; i++) {
-      newSelection.add(entries[i].path);
-    }
-    _updateActiveTab((t) => t.copyWith(selectedPaths: newSelection));
-  }
-
-  void clearSelection() {
-    _updateActiveTab((t) => t.copyWith(selectedPaths: {}));
-  }
-
-  void selectAll() {
-    final allPaths = state.activeTab.entries.map((e) => e.path).toSet();
-    _updateActiveTab((t) => t.copyWith(selectedPaths: allPaths));
-  }
-
-  void toggleSort(SortField field) {
-    SortDirection dir = SortDirection.ascending;
-    if (state.activeTab.sortField == field) {
-      dir = state.activeTab.sortDirection == SortDirection.ascending
-          ? SortDirection.descending
-          : SortDirection.ascending;
-    }
-
-    final sorted = _sortEntries(state.activeTab.entries, field, dir);
     _updateActiveTab(
-      (t) => t.copyWith(sortField: field, sortDirection: dir, entries: sorted),
+      panelId,
+      (tab) => tab.copyWith(entries: sorted, isLoading: false),
     );
   }
 
-  void toggleHidden() {
-    _updateActiveTab((t) => t.copyWith(showHidden: !t.showHidden));
+  void setLoading(PanelId panelId, bool loading) {
+    _updateActiveTab(panelId, (tab) => tab.copyWith(isLoading: loading));
+  }
+
+  void setSearchQuery(PanelId panelId, String? query) {
+    _updateActiveTab(
+      panelId,
+      (tab) =>
+          tab.copyWith(searchQuery: query, clearSearchQuery: query == null),
+    );
+  }
+
+  void setError(PanelId panelId, String? error) {
+    _updateActiveTab(
+      panelId,
+      (tab) => tab.copyWith(error: error, isLoading: false),
+    );
+  }
+
+  void selectEntry(PanelId panelId, String path) {
+    _updateActiveTab(panelId, (tab) => tab.copyWith(selectedPaths: {path}));
+  }
+
+  void toggleSelection(PanelId panelId, String path) {
+    _updateActiveTab(panelId, (tab) {
+      final selection = Set<String>.from(tab.selectedPaths);
+      selection.contains(path) ? selection.remove(path) : selection.add(path);
+      return tab.copyWith(selectedPaths: selection);
+    });
+  }
+
+  void selectRange(PanelId panelId, String from, String to) {
+    _updateActiveTab(panelId, (tab) {
+      final fromIndex = tab.entries.indexWhere((entry) => entry.path == from);
+      final toIndex = tab.entries.indexWhere((entry) => entry.path == to);
+      if (fromIndex == -1 || toIndex == -1) return tab;
+
+      final start = fromIndex < toIndex ? fromIndex : toIndex;
+      final end = fromIndex < toIndex ? toIndex : fromIndex;
+      return tab.copyWith(
+        selectedPaths: {
+          for (var index = start; index <= end; index++)
+            tab.entries[index].path,
+        },
+      );
+    });
+  }
+
+  void clearSelection(PanelId panelId) {
+    _updateActiveTab(panelId, (tab) => tab.copyWith(selectedPaths: {}));
+  }
+
+  void selectAll(PanelId panelId) {
+    _updateActiveTab(
+      panelId,
+      (tab) => tab.copyWith(
+        selectedPaths: tab.entries.map((entry) => entry.path).toSet(),
+      ),
+    );
+  }
+
+  void toggleSort(PanelId panelId, SortField field) {
+    _updateActiveTab(panelId, (tab) {
+      var direction = SortDirection.ascending;
+      if (tab.sortField == field) {
+        direction = tab.sortDirection == SortDirection.ascending
+            ? SortDirection.descending
+            : SortDirection.ascending;
+      }
+      return tab.copyWith(
+        sortField: field,
+        sortDirection: direction,
+        entries: _sortEntries(tab.entries, field, direction),
+      );
+    });
+  }
+
+  void toggleHidden(PanelId panelId) {
+    _updateActiveTab(
+      panelId,
+      (tab) => tab.copyWith(showHidden: !tab.showHidden),
+    );
+  }
+
+  void addTab(PanelId panelId, String path, {String providerId = 'local'}) {
+    final panel = state.panel(panelId);
+    if (panel.tabs.length >= 10) return;
+
+    final tabs = [
+      ...panel.tabs,
+      TabState(
+        id: 'tab_${DateTime.now().microsecondsSinceEpoch}',
+        currentPath: path,
+        providerId: providerId,
+      ),
+    ];
+    _updatePanel(
+      panelId,
+      panel.copyWith(tabs: tabs, activeTabIndex: tabs.length - 1),
+    );
+  }
+
+  void closeTab(PanelId panelId, int index) {
+    final panel = state.panel(panelId);
+    if (panel.tabs.length <= 1 || index < 0 || index >= panel.tabs.length) {
+      return;
+    }
+
+    final tabs = [...panel.tabs]..removeAt(index);
+    var activeIndex = panel.activeTabIndex;
+    if (index < activeIndex) {
+      activeIndex--;
+    } else if (index == activeIndex && activeIndex >= tabs.length) {
+      activeIndex = tabs.length - 1;
+    }
+    _updatePanel(
+      panelId,
+      panel.copyWith(tabs: tabs, activeTabIndex: activeIndex),
+    );
+  }
+
+  void setActiveTab(PanelId panelId, int index) {
+    final panel = state.panel(panelId);
+    if (index >= 0 && index < panel.tabs.length) {
+      _updatePanel(panelId, panel.copyWith(activeTabIndex: index));
+    }
+  }
+
+  void _updateActiveTab(
+    PanelId panelId,
+    TabState Function(TabState tab) update,
+  ) {
+    final panel = state.panel(panelId);
+    if (panel.tabs.isEmpty) return;
+    final tabs = [...panel.tabs];
+    tabs[panel.activeTabIndex] = update(panel.activeTab);
+    _updatePanel(panelId, panel.copyWith(tabs: tabs));
+  }
+
+  void _updatePanel(PanelId panelId, PanelState panel) {
+    state = state.copyWith(panels: {...state.panels, panelId: panel});
   }
 
   List<FileEntry> _sortEntries(
@@ -283,298 +546,22 @@ class PanelA extends _$PanelA {
       if (a.isDirectory && !b.isDirectory) return -1;
       if (!a.isDirectory && b.isDirectory) return 1;
 
-      int cmp = 0;
-      switch (field) {
-        case SortField.name:
-          cmp = a.name.toLowerCase().compareTo(b.name.toLowerCase());
-        case SortField.date:
-          cmp = (a.modified ?? DateTime(1970)).compareTo(b.modified ?? DateTime(1970));
-        case SortField.size:
-          cmp = a.size.compareTo(b.size);
-        case SortField.type:
-          final extA = a.name.split('.').last.toLowerCase();
-          final extB = b.name.split('.').last.toLowerCase();
-          cmp = extA.compareTo(extB);
-      }
-
-      return direction == SortDirection.ascending ? cmp : -cmp;
+      final comparison = switch (field) {
+        SortField.name => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+        SortField.date => (a.modified ?? DateTime(1970)).compareTo(
+          b.modified ?? DateTime(1970),
+        ),
+        SortField.size => a.size.compareTo(b.size),
+        SortField.type =>
+          a.name
+              .split('.')
+              .last
+              .toLowerCase()
+              .compareTo(b.name.split('.').last.toLowerCase()),
+      };
+      return direction == SortDirection.ascending ? comparison : -comparison;
     });
     return sorted;
-  }
-
-  // --- Tab Management ---
-  void addTab(String path, {String providerId = 'local'}) {
-    if (state.tabs.length >= 10) return; // limit
-
-    final newTabId = 'tab_${DateTime.now().millisecondsSinceEpoch}';
-    final newTab = TabState(
-      id: newTabId,
-      currentPath: path,
-      providerId: providerId,
-    );
-
-    final newTabs = List<TabState>.from(state.tabs)..add(newTab);
-    state = state.copyWith(tabs: newTabs, activeTabIndex: newTabs.length - 1);
-  }
-
-  void closeTab(int index) {
-    if (state.tabs.length <= 1) return; // Cannot close the last tab
-
-    final newTabs = List<TabState>.from(state.tabs)..removeAt(index);
-    int newIndex = state.activeTabIndex;
-    if (index < newIndex) {
-      newIndex--;
-    } else if (index == newIndex && newIndex >= newTabs.length) {
-      newIndex = newTabs.length - 1;
-    }
-    state = state.copyWith(tabs: newTabs, activeTabIndex: newIndex);
-  }
-
-  void setActiveTab(int index) {
-    if (index >= 0 && index < state.tabs.length) {
-      state = state.copyWith(activeTabIndex: index);
-    }
-  }
-}
-
-/// State for panel B
-@Riverpod(keepAlive: true)
-class PanelB extends _$PanelB {
-  @override
-  PanelState build() {
-    return const PanelState(
-      tabs: [TabState(id: 'tab_0', currentPath: '/')],
-    );
-  }
-
-  void _updateActiveTab(TabState Function(TabState tab) updater) {
-    if (state.tabs.isEmpty) return;
-    final newTabs = List<TabState>.from(state.tabs);
-    newTabs[state.activeTabIndex] = updater(state.activeTab);
-    state = state.copyWith(tabs: newTabs);
-  }
-
-  void setPath(String path) {
-    _updateActiveTab((t) {
-      if (t.currentPath == path) return t;
-      final newHistory = t.historyIndex >= 0 
-          ? t.history.sublist(0, t.historyIndex + 1) 
-          : <String>[t.currentPath];
-      newHistory.add(path);
-      return t.copyWith(
-        currentPath: path,
-        selectedPaths: {},
-        error: null,
-        history: newHistory,
-        historyIndex: newHistory.length - 1,
-      );
-    });
-  }
-
-  void setProviderAndPath(String providerId, String path) {
-    _updateActiveTab((t) {
-      if (t.currentPath == path && t.providerId == providerId) return t;
-      final newHistory = t.historyIndex >= 0 
-          ? t.history.sublist(0, t.historyIndex + 1) 
-          : <String>[t.currentPath];
-      newHistory.add(path);
-      return t.copyWith(
-        providerId: providerId,
-        currentPath: path,
-        selectedPaths: {},
-        error: null,
-        history: newHistory,
-        historyIndex: newHistory.length - 1,
-      );
-    });
-  }
-
-  void goBack() {
-    _updateActiveTab((t) {
-      if (t.historyIndex > 0) {
-        final newIndex = t.historyIndex - 1;
-        return t.copyWith(
-          currentPath: t.history[newIndex],
-          selectedPaths: {},
-          error: null,
-          historyIndex: newIndex,
-        );
-      }
-      return t;
-    });
-  }
-
-  void goForward() {
-    _updateActiveTab((t) {
-      if (t.historyIndex >= 0 && t.historyIndex < t.history.length - 1) {
-        final newIndex = t.historyIndex + 1;
-        return t.copyWith(
-          currentPath: t.history[newIndex],
-          selectedPaths: {},
-          error: null,
-          historyIndex: newIndex,
-        );
-      }
-      return t;
-    });
-  }
-
-  void setEntries(List<FileEntry> entries) {
-    final sorted = _sortEntries(
-      entries,
-      state.activeTab.sortField,
-      state.activeTab.sortDirection,
-    );
-    _updateActiveTab((t) => t.copyWith(entries: sorted, isLoading: false));
-  }
-
-  void setLoading(bool loading) {
-    _updateActiveTab((t) => t.copyWith(isLoading: loading));
-  }
-
-  void setSearchQuery(String? query) {
-    if (state.tabs.isEmpty) return;
-    final tabs = List<TabState>.from(state.tabs);
-    tabs[state.activeTabIndex] = tabs[state.activeTabIndex].copyWith(
-      searchQuery: query,
-      clearSearchQuery: query == null,
-    );
-    state = state.copyWith(tabs: tabs);
-  }
-
-  void setError(String? error) {
-    _updateActiveTab((t) => t.copyWith(error: error, isLoading: false));
-  }
-
-  void selectEntry(String path) {
-    _updateActiveTab((t) => t.copyWith(selectedPaths: {path}));
-  }
-
-  void toggleSelection(String path) {
-    final newSelection = Set<String>.from(state.activeTab.selectedPaths);
-    if (newSelection.contains(path)) {
-      newSelection.remove(path);
-    } else {
-      newSelection.add(path);
-    }
-    _updateActiveTab((t) => t.copyWith(selectedPaths: newSelection));
-  }
-
-  void selectRange(String from, String to) {
-    final entries = state.activeTab.entries;
-    final fromIndex = entries.indexWhere((e) => e.path == from);
-    final toIndex = entries.indexWhere((e) => e.path == to);
-    if (fromIndex == -1 || toIndex == -1) return;
-
-    final start = fromIndex < toIndex ? fromIndex : toIndex;
-    final end = fromIndex < toIndex ? toIndex : fromIndex;
-
-    final newSelection = <String>{};
-    for (var i = start; i <= end; i++) {
-      newSelection.add(entries[i].path);
-    }
-    _updateActiveTab((t) => t.copyWith(selectedPaths: newSelection));
-  }
-
-  void clearSelection() {
-    _updateActiveTab((t) => t.copyWith(selectedPaths: {}));
-  }
-
-  void selectAll() {
-    final allPaths = state.activeTab.entries.map((e) => e.path).toSet();
-    _updateActiveTab((t) => t.copyWith(selectedPaths: allPaths));
-  }
-
-  void toggleSort(SortField field) {
-    SortDirection dir = SortDirection.ascending;
-    if (state.activeTab.sortField == field) {
-      dir = state.activeTab.sortDirection == SortDirection.ascending
-          ? SortDirection.descending
-          : SortDirection.ascending;
-    }
-
-    final sorted = _sortEntries(state.activeTab.entries, field, dir);
-    _updateActiveTab(
-      (t) => t.copyWith(sortField: field, sortDirection: dir, entries: sorted),
-    );
-  }
-
-  void toggleHidden() {
-    _updateActiveTab((t) => t.copyWith(showHidden: !t.showHidden));
-  }
-
-  List<FileEntry> _sortEntries(
-    List<FileEntry> entries,
-    SortField field,
-    SortDirection direction,
-  ) {
-    final sorted = List<FileEntry>.from(entries);
-    sorted.sort((a, b) {
-      if (a.isDirectory && !b.isDirectory) return -1;
-      if (!a.isDirectory && b.isDirectory) return 1;
-
-      int cmp = 0;
-      switch (field) {
-        case SortField.name:
-          cmp = a.name.toLowerCase().compareTo(b.name.toLowerCase());
-        case SortField.date:
-          cmp = (a.modified ?? DateTime(1970)).compareTo(b.modified ?? DateTime(1970));
-        case SortField.size:
-          cmp = a.size.compareTo(b.size);
-        case SortField.type:
-          final extA = a.name.split('.').last.toLowerCase();
-          final extB = b.name.split('.').last.toLowerCase();
-          cmp = extA.compareTo(extB);
-      }
-
-      return direction == SortDirection.ascending ? cmp : -cmp;
-    });
-    return sorted;
-  }
-
-  // --- Tab Management ---
-  void addTab(String path, {String providerId = 'local'}) {
-    if (state.tabs.length >= 10) return; // limit
-
-    final newTabId = 'tab_${DateTime.now().millisecondsSinceEpoch}';
-    final newTab = TabState(
-      id: newTabId,
-      currentPath: path,
-      providerId: providerId,
-    );
-
-    final newTabs = List<TabState>.from(state.tabs)..add(newTab);
-    state = state.copyWith(tabs: newTabs, activeTabIndex: newTabs.length - 1);
-  }
-
-  void closeTab(int index) {
-    if (state.tabs.length <= 1) return; // Cannot close the last tab
-
-    final newTabs = List<TabState>.from(state.tabs)..removeAt(index);
-    int newIndex = state.activeTabIndex;
-    if (index < newIndex) {
-      newIndex--;
-    } else if (index == newIndex && newIndex >= newTabs.length) {
-      newIndex = newTabs.length - 1;
-    }
-    state = state.copyWith(tabs: newTabs, activeTabIndex: newIndex);
-  }
-
-  void setActiveTab(int index) {
-    if (index >= 0 && index < state.tabs.length) {
-      state = state.copyWith(activeTabIndex: index);
-    }
-  }
-}
-
-/// Which panel is currently active (has keyboard focus)
-@Riverpod(keepAlive: true)
-class ActivePanel extends _$ActivePanel {
-  @override
-  PanelSide build() => PanelSide.a;
-
-  void setActive(PanelSide side) {
-    state = side;
   }
 }
 
@@ -583,59 +570,49 @@ enum ClipboardOperation { copy, cut }
 class ClipboardState {
   const ClipboardState({
     required this.sourcePaths,
-    required this.sourceSide,
+    required this.sourcePanelId,
     required this.sourceProviderId,
     required this.operation,
   });
 
   final List<String> sourcePaths;
-  final PanelSide sourceSide;
+  final PanelId sourcePanelId;
   final String sourceProviderId;
   final ClipboardOperation operation;
 }
 
-
-
-/// Clipboard for copy/cut operations
 @Riverpod(keepAlive: true)
 class FileClipboard extends _$FileClipboard {
   @override
   ClipboardState? build() => null;
 
-  void copy(List<String> paths, PanelSide side, String providerId) {
+  void copy(List<String> paths, PanelId panelId, String providerId) {
     state = ClipboardState(
       sourcePaths: paths,
-      sourceSide: side,
+      sourcePanelId: panelId,
       sourceProviderId: providerId,
       operation: ClipboardOperation.copy,
     );
   }
 
-  void cut(List<String> paths, PanelSide side, String providerId) {
+  void cut(List<String> paths, PanelId panelId, String providerId) {
     state = ClipboardState(
       sourcePaths: paths,
-      sourceSide: side,
+      sourcePanelId: panelId,
       sourceProviderId: providerId,
       operation: ClipboardOperation.cut,
     );
   }
 
-  void clear() {
-    state = null;
-  }
+  void clear() => state = null;
 }
 
-/// Current transfer/operation progress state
 @Riverpod(keepAlive: true)
 class OperationProgress extends _$OperationProgress {
   @override
   TransferProgress? build() => null;
 
-  void setProgress(TransferProgress state) {
-    this.state = state;
-  }
+  void setProgress(TransferProgress state) => this.state = state;
 
-  void clear() {
-    state = null;
-  }
+  void clear() => state = null;
 }

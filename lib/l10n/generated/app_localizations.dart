@@ -1177,6 +1177,180 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'History'**
   String get syncHistory;
+
+  /// No description provided for @panelAdd.
+  ///
+  /// In en, this message translates to:
+  /// **'Add panel'**
+  String get panelAdd;
+
+  /// No description provided for @panelClose.
+  ///
+  /// In en, this message translates to:
+  /// **'Close panel'**
+  String get panelClose;
+
+  /// No description provided for @panelNumber.
+  ///
+  /// In en, this message translates to:
+  /// **'Panel {number}'**
+  String panelNumber(int number);
+
+  /// No description provided for @targetPanels.
+  ///
+  /// In en, this message translates to:
+  /// **'Target panels'**
+  String get targetPanels;
+
+  /// No description provided for @targetSourcePanel.
+  ///
+  /// In en, this message translates to:
+  /// **'Source panel'**
+  String get targetSourcePanel;
+
+  /// No description provided for @targetOperationSync.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync'**
+  String get targetOperationSync;
+
+  /// No description provided for @targetSelectedSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{selected} of {total} selected'**
+  String targetSelectedSummary(int selected, int total);
+
+  /// No description provided for @targetSameLocation.
+  ///
+  /// In en, this message translates to:
+  /// **'Same location as the source panel'**
+  String get targetSameLocation;
+
+  /// No description provided for @targetConnectionUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Connection is unavailable'**
+  String get targetConnectionUnavailable;
+
+  /// No description provided for @targetLocalPanelRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Select a local destination panel for compression'**
+  String get targetLocalPanelRequired;
+
+  /// No description provided for @targetContinue.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue'**
+  String get targetContinue;
+
+  /// No description provided for @multiTransferResultTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Transfer results'**
+  String get multiTransferResultTitle;
+
+  /// No description provided for @multiTransferSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Transfer completed for {count} target panels'**
+  String multiTransferSuccess(int count);
+
+  /// No description provided for @multiTransferPartial.
+  ///
+  /// In en, this message translates to:
+  /// **'{successful} of {total} target panels completed successfully'**
+  String multiTransferPartial(int successful, int total);
+
+  /// No description provided for @multiTransferCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Completed'**
+  String get multiTransferCompleted;
+
+  /// No description provided for @multiTransferFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get multiTransferFailed;
+
+  /// No description provided for @multiTransferCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelled'**
+  String get multiTransferCancelled;
+
+  /// No description provided for @multiTransferSkipped.
+  ///
+  /// In en, this message translates to:
+  /// **'Not started'**
+  String get multiTransferSkipped;
+
+  /// No description provided for @multiTransferSourcePreserved.
+  ///
+  /// In en, this message translates to:
+  /// **'The source was preserved because not every target completed successfully.'**
+  String get multiTransferSourcePreserved;
+
+  /// No description provided for @multiArchiveResultTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Compression results'**
+  String get multiArchiveResultTitle;
+
+  /// No description provided for @multiArchiveSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Archive created in {count} target panels'**
+  String multiArchiveSuccess(int count);
+
+  /// No description provided for @archiveLocalSourceRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Compression currently supports files from local panels only.'**
+  String get archiveLocalSourceRequired;
+
+  /// No description provided for @multiSyncResultTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Synchronization results'**
+  String get multiSyncResultTitle;
+
+  /// No description provided for @multiSyncSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{successful} of {total} target panels completed successfully'**
+  String multiSyncSummary(int successful, int total);
+
+  /// No description provided for @multiSyncCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Synchronization completed'**
+  String get multiSyncCompleted;
+
+  /// No description provided for @multiSyncNoChanges.
+  ///
+  /// In en, this message translates to:
+  /// **'Already up to date'**
+  String get multiSyncNoChanges;
+
+  /// No description provided for @multiSyncFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Synchronization failed'**
+  String get multiSyncFailed;
+
+  /// No description provided for @multiSyncCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Synchronization cancelled'**
+  String get multiSyncCancelled;
+
+  /// No description provided for @multiSyncSkipped.
+  ///
+  /// In en, this message translates to:
+  /// **'Not started'**
+  String get multiSyncSkipped;
 }
 
 class _AppLocalizationsDelegate

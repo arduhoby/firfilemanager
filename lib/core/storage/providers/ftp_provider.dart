@@ -9,14 +9,12 @@ import 'package:path/path.dart' as p;
 import '../models/connection_profile.dart';
 import '../models/file_entry.dart';
 import '../models/transfer_progress.dart';
+import '../hidden_entry_policy.dart';
 import '../storage_provider.dart';
 
 /// A [StorageProvider] that connects to FTP/FTPS servers using `ftpconnect`.
 class FtpProvider implements StorageProvider {
-  FtpProvider({
-    required this.profile,
-    required this.password,
-  });
+  FtpProvider({required this.profile, required this.password});
 
   @override
   final ConnectionProfile profile;
@@ -25,10 +23,12 @@ class FtpProvider implements StorageProvider {
 
   FTPConnect? _ftp;
   bool _isConnected = false;
-  final StreamController<bool> _connectionController = StreamController<bool>.broadcast();
+  final StreamController<bool> _connectionController =
+      StreamController<bool>.broadcast();
 
   @override
-  String get displayName => '${profile.type == ConnectionType.ftps ? "FTPS" : "FTP"}: ${profile.name}';
+  String get displayName =>
+      '${profile.type == ConnectionType.ftps ? "FTPS" : "FTP"}: ${profile.name}';
 
   @override
   bool get isConnected => _isConnected;
@@ -48,7 +48,9 @@ class FtpProvider implements StorageProvider {
 
       final isFtps = profile.type == ConnectionType.ftps;
       final primarySecurity = isFtps
-          ? (profile.effectivePort == 990 ? SecurityType.ftps : SecurityType.ftpes)
+          ? (profile.effectivePort == 990
+                ? SecurityType.ftps
+                : SecurityType.ftpes)
           : SecurityType.ftp;
 
       _ftp = FTPConnect(
@@ -110,7 +112,9 @@ class FtpProvider implements StorageProvider {
 
   /// Always join FTP paths with forward slashes regardless of OS
   static String _ftpJoin(String parent, String child) {
-    final cleanParent = parent.replaceAll('\\', '/').replaceAll(RegExp(r'/+$'), '');
+    final cleanParent = parent
+        .replaceAll('\\', '/')
+        .replaceAll(RegExp(r'/+$'), '');
     final cleanChild = child.replaceAll('\\', '/');
     if (cleanParent.isEmpty || cleanParent == '/') {
       return '/$cleanChild';
@@ -121,7 +125,10 @@ class FtpProvider implements StorageProvider {
   @override
   Future<List<FileEntry>> list(String path, [ListOptions? options]) async {
     if (!_isConnected || _ftp == null) {
-      throw StorageException('Not connected', code: StorageException.networkError);
+      throw StorageException(
+        'Not connected',
+        code: StorageException.networkError,
+      );
     }
 
     final ftpPath = path.replaceAll('\\', '/');
@@ -136,24 +143,30 @@ class FtpProvider implements StorageProvider {
       try {
         entries = await _safeFtpList(ftpPath);
       } catch (e) {
-        debugPrint('FTP _safeFtpList failed: $e, trying listDirectoryContent fallback...');
+        debugPrint(
+          'FTP _safeFtpList failed: $e, trying listDirectoryContent fallback...',
+        );
         final items = await _ftp!.listDirectoryContent();
         entries = items
             .where((item) => item.name != '.' && item.name != '..')
-            .map((item) => FileEntry(
-                  name: item.name,
-                  path: _ftpJoin(ftpPath, item.name),
-                  isDirectory: item.type == FTPEntryType.dir,
-                  size: item.size ?? 0,
-                  modified: item.modifyTime,
-                  hidden: item.name.startsWith('.'),
-                ))
+            .map(
+              (item) => FileEntry(
+                name: item.name,
+                path: _ftpJoin(ftpPath, item.name),
+                isDirectory: item.type == FTPEntryType.dir,
+                size: item.size ?? 0,
+                modified: item.modifyTime,
+                hidden: HiddenEntryPolicy.isDotHidden(item.name),
+              ),
+            )
             .toList();
       }
 
       final showHidden = options?.showHidden ?? false;
       if (!showHidden) {
-        entries = entries.where((e) => !e.name.startsWith('.')).toList();
+        entries = entries
+            .where((e) => !HiddenEntryPolicy.isDotHidden(e.name))
+            .toList();
       }
       return entries;
     } catch (e) {
@@ -170,12 +183,20 @@ class FtpProvider implements StorageProvider {
   Future<List<FileEntry>> _safeFtpList(String ftpPath) async {
     final pasvReply = await _ftp!.sendCustomCommand('PASV');
     if (!pasvReply.isSuccessCode()) {
-      throw StorageException('PASV failed: ${pasvReply.message}', code: StorageException.networkError);
+      throw StorageException(
+        'PASV failed: ${pasvReply.message}',
+        code: StorageException.networkError,
+      );
     }
 
-    final match = RegExp(r'\((?:(\d+),){5}(\d+)\)').firstMatch(pasvReply.message);
+    final match = RegExp(
+      r'\((?:(\d+),){5}(\d+)\)',
+    ).firstMatch(pasvReply.message);
     if (match == null) {
-      throw StorageException('Invalid PASV response: ${pasvReply.message}', code: StorageException.networkError);
+      throw StorageException(
+        'Invalid PASV response: ${pasvReply.message}',
+        code: StorageException.networkError,
+      );
     }
 
     final nums = pasvReply.message
@@ -185,12 +206,21 @@ class FtpProvider implements StorageProvider {
         .toList();
     final pasvPort = (nums[4] * 256) + nums[5];
 
-    final dataSocket = await Socket.connect(profile.host!, pasvPort, timeout: const Duration(seconds: 10));
+    final dataSocket = await Socket.connect(
+      profile.host!,
+      pasvPort,
+      timeout: const Duration(seconds: 10),
+    );
 
     final listReply = await _ftp!.sendCustomCommand('LIST');
-    if (!listReply.isSuccessCode() && listReply.code != 150 && listReply.code != 125) {
+    if (!listReply.isSuccessCode() &&
+        listReply.code != 150 &&
+        listReply.code != 125) {
       await dataSocket.close();
-      throw StorageException('LIST failed: ${listReply.message}', code: StorageException.networkError);
+      throw StorageException(
+        'LIST failed: ${listReply.message}',
+        code: StorageException.networkError,
+      );
     }
 
     final bytes = <int>[];
@@ -216,7 +246,11 @@ class FtpProvider implements StorageProvider {
   /// Parses Unix, IIS, MLSD, and simple FTP response lines safely
   FileEntry? _parseFtpLine(String rawLine, String dirPath) {
     final line = rawLine.trim();
-    if (line.isEmpty || line == '.' || line == '..' || line.startsWith('total ')) return null;
+    if (line.isEmpty ||
+        line == '.' ||
+        line == '..' ||
+        line.startsWith('total '))
+      return null;
 
     // 1. MLSD format: "type=dir;modify=20260803...; filename"
     if (line.contains(';')) {
@@ -262,13 +296,16 @@ class FtpProvider implements StorageProvider {
           isDirectory: isDir,
           size: size,
           modified: modified,
-          hidden: name.startsWith('.'),
+          hidden: HiddenEntryPolicy.isDotHidden(name),
         );
       }
     }
 
     // 2. IIS Windows format: "02-11-15  03:05PM  <DIR>  folderName"
-    final iisMatch = RegExp(r'^\d{2}-\d{2}-\d{2,4}\s+\d{2}:\d{2}(?:AM|PM)?\s+(<DIR>|\d+)\s+(.+)$', caseSensitive: false).firstMatch(line);
+    final iisMatch = RegExp(
+      r'^\d{2}-\d{2}-\d{2,4}\s+\d{2}:\d{2}(?:AM|PM)?\s+(<DIR>|\d+)\s+(.+)$',
+      caseSensitive: false,
+    ).firstMatch(line);
     if (iisMatch != null) {
       final typeOrSize = iisMatch.group(1)!;
       final name = iisMatch.group(2)!.trim();
@@ -280,7 +317,7 @@ class FtpProvider implements StorageProvider {
           path: _ftpJoin(dirPath, name),
           isDirectory: isDir,
           size: size,
-          hidden: name.startsWith('.'),
+          hidden: HiddenEntryPolicy.isDotHidden(name),
         );
       }
     }
@@ -298,21 +335,27 @@ class FtpProvider implements StorageProvider {
             path: _ftpJoin(dirPath, name),
             isDirectory: isDir,
             size: size,
-            hidden: name.startsWith('.'),
+            hidden: HiddenEntryPolicy.isDotHidden(name),
           );
         }
       }
     }
 
     // 4. Raw filename fallback
-    if (line.isNotEmpty && line != '.' && line != '..' && !line.startsWith('226 ') && !line.startsWith('150 ')) {
-      final cleanName = line.endsWith('/') ? line.substring(0, line.length - 1) : line;
+    if (line.isNotEmpty &&
+        line != '.' &&
+        line != '..' &&
+        !line.startsWith('226 ') &&
+        !line.startsWith('150 ')) {
+      final cleanName = line.endsWith('/')
+          ? line.substring(0, line.length - 1)
+          : line;
       return FileEntry(
         name: cleanName,
         path: _ftpJoin(dirPath, cleanName),
         isDirectory: line.endsWith('/'),
         size: 0,
-        hidden: cleanName.startsWith('.'),
+        hidden: HiddenEntryPolicy.isDotHidden(cleanName),
       );
     }
 
@@ -322,7 +365,10 @@ class FtpProvider implements StorageProvider {
   @override
   Future<FileEntry> stat(String path) async {
     if (!_isConnected || _ftp == null) {
-      throw StorageException('Not connected', code: StorageException.networkError);
+      throw StorageException(
+        'Not connected',
+        code: StorageException.networkError,
+      );
     }
 
     // FTP doesn't have a direct stat command, use listdir on parent
@@ -332,13 +378,20 @@ class FtpProvider implements StorageProvider {
     final entries = await list(parent);
     final entry = entries.where((e) => e.name == name).firstOrNull;
     if (entry == null) {
-      throw StorageException('Not found', code: StorageException.notFound, path: path);
+      throw StorageException(
+        'Not found',
+        code: StorageException.notFound,
+        path: path,
+      );
     }
     return entry;
   }
 
   @override
-  Stream<TransferProgress> read(String path, {CancelToken? cancelToken}) async* {
+  Stream<TransferProgress> read(
+    String path, {
+    CancelToken? cancelToken,
+  }) async* {
     if (!_isConnected || _ftp == null) {
       yield TransferProgress(
         operation: TransferOperation.read,
@@ -483,7 +536,11 @@ class FtpProvider implements StorageProvider {
       controller.close();
 
       // Write to dest
-      await for (final progress in destProvider.write(destPath, controller.stream, cancelToken: cancelToken)) {
+      await for (final progress in destProvider.write(
+        destPath,
+        controller.stream,
+        cancelToken: cancelToken,
+      )) {
         yield progress.copyWith(
           operation: TransferOperation.copy,
           bytesTransferred: bytesTransferred,
@@ -504,7 +561,10 @@ class FtpProvider implements StorageProvider {
   @override
   Future<void> move(String sourcePath, String destPath) async {
     if (!_isConnected || _ftp == null) {
-      throw StorageException('Not connected', code: StorageException.networkError);
+      throw StorageException(
+        'Not connected',
+        code: StorageException.networkError,
+      );
     }
 
     try {
@@ -530,7 +590,10 @@ class FtpProvider implements StorageProvider {
   @override
   Future<void> delete(String path) async {
     if (!_isConnected || _ftp == null) {
-      throw StorageException('Not connected', code: StorageException.networkError);
+      throw StorageException(
+        'Not connected',
+        code: StorageException.networkError,
+      );
     }
 
     try {
@@ -559,7 +622,10 @@ class FtpProvider implements StorageProvider {
   @override
   Future<void> mkdir(String path) async {
     if (!_isConnected || _ftp == null) {
-      throw StorageException('Not connected', code: StorageException.networkError);
+      throw StorageException(
+        'Not connected',
+        code: StorageException.networkError,
+      );
     }
 
     try {
@@ -602,7 +668,8 @@ class FtpProvider implements StorageProvider {
   @override
   String basename(String path) {
     final normalized = path.replaceAll('\\', '/');
-    return normalized.split('/').where((s) => s.isNotEmpty).lastOrNull ?? normalized;
+    return normalized.split('/').where((s) => s.isNotEmpty).lastOrNull ??
+        normalized;
   }
 
   @override
@@ -614,7 +681,11 @@ class FtpProvider implements StorageProvider {
   }
 
   @override
-  Future<List<FileEntry>> search(String path, String query, {bool recursive = false}) async {
+  Future<List<FileEntry>> search(
+    String path,
+    String query, {
+    bool recursive = false,
+  }) async {
     final results = <FileEntry>[];
     final queryLower = query.toLowerCase();
 

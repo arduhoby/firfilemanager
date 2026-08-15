@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,11 +11,18 @@ import '../file_operations/archive_service.dart';
 import '../file_operations/file_open_service.dart';
 import '../file_operations/file_operations_service.dart';
 import '../file_operations/file_operations_state.dart';
+import '../file_operations/multi_panel_sync_coordinator.dart';
+import '../file_operations/multi_panel_transfer_coordinator.dart';
+import '../file_operations/panel_drag_policy.dart';
+import '../file_operations/panel_target_selection.dart';
 import '../file_operations/sync_models.dart';
 import '../file_operations/sync_job_models.dart';
 import '../file_operations/sync_repositories.dart';
 import '../file_operations/sync_scheduler.dart';
 import 'panel_controller.dart';
+import 'panel_target_selector_dialog.dart';
+import 'multi_panel_transfer_result_dialog.dart';
+import 'multi_panel_sync_result_dialog.dart';
 import 'sync_preview_dialog.dart';
 import 'sync_job_dialog.dart';
 import '../../core/storage/models/transfer_progress.dart';
@@ -35,25 +41,41 @@ part 'file_operations_actions.g.dart';
 class FileOperationsActions extends _$FileOperationsActions {
   @override
   void build() {
-    // Service provider — no state
+    // Service provider - no state.
   }
+
+  PanelState _panelState(PanelId panelId) =>
+      ref.read(panelStateProvider(panelId));
+
+  PanelId _otherPanelId(PanelId sourcePanelId) => ref
+      .read(panelWorkspaceProvider)
+      .panelOrder
+      .firstWhere((panelId) => panelId != sourcePanelId);
 
   void _triggerAnimation(
     BuildContext context,
-    PanelSide activeSide,
+    PanelId activeSide,
     TransferOperation operation,
-    bool isDir,
-  ) {
+    bool isDir, {
+    PanelId? destinationPanelId,
+  }) {
     if (!context.mounted) return;
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
-    final panelA = Offset(screenWidth * 0.25, screenHeight * 0.5);
-    final panelB = Offset(screenWidth * 0.75, screenHeight * 0.5);
+    final workspace = ref.read(panelWorkspaceProvider);
+    final sourceIndex = workspace.panelOrder.indexOf(activeSide);
+    final sourceX = sourceIndex < 0
+        ? screenWidth * 0.5
+        : screenWidth * ((sourceIndex + 0.5) / workspace.panelCount);
+    final destinationId = destinationPanelId ?? _otherPanelId(activeSide);
+    final destinationIndex = workspace.panelOrder.indexOf(destinationId);
+    final destinationX =
+        screenWidth * ((destinationIndex + 0.5) / workspace.panelCount);
 
-    final start = activeSide == PanelSide.a ? panelA : panelB;
+    final start = Offset(sourceX, screenHeight * 0.5);
     final end = operation == TransferOperation.delete
         ? Offset(screenWidth * 0.5, screenHeight - 50)
-        : (activeSide == PanelSide.a ? panelB : panelA);
+        : Offset(destinationX, screenHeight * 0.5);
 
     final icon = operation == TransferOperation.delete
         ? Icons.delete_outline
@@ -69,16 +91,11 @@ class FileOperationsActions extends _$FileOperationsActions {
       end: end,
       icon: icon,
       color: color,
-      // The completion sound is played once by DualPaneShell after the whole
-      // operation finishes, not when the visual animation starts.
-      playSound: false,
     );
   }
 
-  StorageProvider _getProviderForSide(PanelSide side) {
-    final panelState = side == PanelSide.a
-        ? ref.read(panelAProvider)
-        : ref.read(panelBProvider);
+  StorageProvider _getProviderForSide(PanelId side) {
+    final panelState = _panelState(side);
 
     if (panelState.activeTab.providerId == 'local') {
       return ref.read(localStorageProviderProvider);
@@ -93,43 +110,109 @@ class FileOperationsActions extends _$FileOperationsActions {
     return provider;
   }
 
+  PanelProviderStatus _providerStatus(String providerId) {
+    final provider = ref.read(storageProviderRegistryProvider)[providerId];
+    if (providerId == 'local') {
+      return PanelProviderStatus(
+        displayName: provider?.displayName ?? 'Local',
+        isAvailable: true,
+      );
+    }
+    return PanelProviderStatus(
+      displayName: provider?.displayName ?? providerId,
+      isAvailable: provider?.isConnected ?? false,
+    );
+  }
+
+  Future<List<PanelId>> _selectTargetPanels(
+    BuildContext context,
+    PanelId sourcePanelId,
+    PanelTargetOperation operation, {
+    bool allowMultiple = true,
+    bool Function(TabState targetState)? targetSupported,
+  }) async {
+    final workspace = ref.read(panelWorkspaceProvider);
+    final catalog = PanelTargetCatalog.fromWorkspace(
+      workspace: workspace,
+      sourcePanelId: sourcePanelId,
+      providerStatus: _providerStatus,
+      targetSupported: targetSupported,
+    );
+
+    if (!PanelTargetSelectionPolicy.shouldShowSelector(workspace.panelCount)) {
+      return catalog.selectableTargets.length == 1
+          ? [catalog.selectableTargets.single.panelId]
+          : const [];
+    }
+    if (!context.mounted) return const [];
+
+    final selectedPanelIds = await showDialog<List<PanelId>>(
+      context: context,
+      builder: (context) => PanelTargetSelectorDialog(
+        catalog: catalog,
+        operation: operation,
+        allowMultiple: allowMultiple,
+      ),
+    );
+    return selectedPanelIds ?? const [];
+  }
+
+  Future<List<PanelId>> _selectArchiveTargetPanels(
+    BuildContext context,
+    PanelId sourcePanelId,
+  ) async {
+    final l10n = gen.AppLocalizations.of(context)!;
+    final sourceState = _panelState(sourcePanelId);
+    if (sourceState.activeTab.providerId != 'local') {
+      _showErrorSnackBar(context, l10n.archiveLocalSourceRequired);
+      return const [];
+    }
+
+    return _selectTargetPanels(
+      context,
+      sourcePanelId,
+      PanelTargetOperation.compress,
+      targetSupported: (targetState) => targetState.providerId == 'local',
+    );
+  }
+
   /// Copy selected entries to clipboard
-  void copyToClipboard(PanelSide side, List<FileEntry> entries) {
-    final panelState = side == PanelSide.a
-        ? ref.read(panelAProvider)
-        : ref.read(panelBProvider);
+  void copyToClipboard(PanelId side, List<FileEntry> entries) {
+    final panelState = _panelState(side);
     final providerId = panelState.activeTab.providerId;
     final paths = entries.map((e) => e.path).toList();
     ref.read(fileClipboardProvider.notifier).copy(paths, side, providerId);
   }
 
   /// Cut selected entries to clipboard
-  void cutToClipboard(PanelSide side, List<FileEntry> entries) {
-    final panelState = side == PanelSide.a
-        ? ref.read(panelAProvider)
-        : ref.read(panelBProvider);
+  void cutToClipboard(PanelId side, List<FileEntry> entries) {
+    final panelState = _panelState(side);
     final providerId = panelState.activeTab.providerId;
     final paths = entries.map((e) => e.path).toList();
     ref.read(fileClipboardProvider.notifier).cut(paths, side, providerId);
   }
 
   /// Paste from clipboard to the given panel's current directory
-  Future<void> paste(BuildContext context, PanelSide destSide) async {
-    final destState = destSide == PanelSide.a
-        ? ref.read(panelAProvider)
-        : ref.read(panelBProvider);
+  Future<void> paste(BuildContext context, PanelId destSide) async {
+    final destState = _panelState(destSide);
 
     final provider = _getProviderForSide(destSide);
     final service = ref.read(fileOperationsServiceProvider.notifier);
 
     final clipboard = ref.read(fileClipboardProvider);
     if (clipboard != null && clipboard.sourcePaths.isNotEmpty) {
-      final sourceSide = clipboard.sourceSide;
+      final sourceSide = clipboard.sourcePanelId;
       final operation = clipboard.operation == ClipboardOperation.cut
           ? TransferOperation.move
           : TransferOperation.copy;
       // We assume it might be a dir, but it's just for icon
-      _triggerAnimation(context, sourceSide, operation, false);
+      _triggerAnimation(
+        context,
+        sourceSide,
+        operation,
+        false,
+        destinationPanelId: destSide,
+      );
     }
 
     try {
@@ -150,7 +233,7 @@ class FileOperationsActions extends _$FileOperationsActions {
   /// Show rename dialog
   Future<void> showRenameDialog(
     BuildContext context,
-    PanelSide side,
+    PanelId side,
     FileEntry entry,
   ) async {
     final l10n = gen.AppLocalizations.of(context)!;
@@ -197,7 +280,7 @@ class FileOperationsActions extends _$FileOperationsActions {
   /// Show delete confirmation dialog
   Future<void> showDeleteDialog(
     BuildContext context,
-    PanelSide side,
+    PanelId side,
     List<FileEntry> entries,
   ) async {
     await _executeDeleteOrAsk(context, side, entries);
@@ -206,7 +289,7 @@ class FileOperationsActions extends _$FileOperationsActions {
   /// Unified delete execution: asks only if a directory is NOT empty.
   Future<void> _executeDeleteOrAsk(
     BuildContext context,
-    PanelSide side,
+    PanelId side,
     List<FileEntry> entries,
   ) async {
     if (entries.isEmpty) return;
@@ -301,7 +384,7 @@ class FileOperationsActions extends _$FileOperationsActions {
   }
 
   /// Show new folder dialog
-  Future<void> showNewFolderDialog(BuildContext context, PanelSide side) async {
+  Future<void> showNewFolderDialog(BuildContext context, PanelId side) async {
     final l10n = gen.AppLocalizations.of(context)!;
     final controller = TextEditingController();
     final result = await showDialog<String>(
@@ -330,9 +413,7 @@ class FileOperationsActions extends _$FileOperationsActions {
 
     if (result == null || result.isEmpty) return;
 
-    final panelState = side == PanelSide.a
-        ? ref.read(panelAProvider)
-        : ref.read(panelBProvider);
+    final panelState = _panelState(side);
 
     final provider = _getProviderForSide(side);
     final service = ref.read(fileOperationsServiceProvider.notifier);
@@ -352,7 +433,7 @@ class FileOperationsActions extends _$FileOperationsActions {
   }
 
   /// Show new file dialog
-  Future<void> showNewFileDialog(BuildContext context, PanelSide side) async {
+  Future<void> showNewFileDialog(BuildContext context, PanelId side) async {
     final l10n = gen.AppLocalizations.of(context)!;
     final controller = TextEditingController();
     final result = await showDialog<String>(
@@ -381,9 +462,7 @@ class FileOperationsActions extends _$FileOperationsActions {
 
     if (result == null || result.isEmpty) return;
 
-    final panelState = side == PanelSide.a
-        ? ref.read(panelAProvider)
-        : ref.read(panelBProvider);
+    final panelState = _panelState(side);
 
     final provider = _getProviderForSide(side);
     final service = ref.read(fileOperationsServiceProvider.notifier);
@@ -449,116 +528,145 @@ class FileOperationsActions extends _$FileOperationsActions {
     );
   }
 
-  /// Copy selected entries from source panel to the other panel
-  Future<void> copyToOtherPanel(
-    BuildContext context,
-    PanelSide sourceSide,
-  ) async {
-    final sourceState = sourceSide == PanelSide.a
-        ? ref.read(panelAProvider)
-        : ref.read(panelBProvider);
+  /// Copy selected entries from one source panel to selected target panels.
+  Future<void> copyToOtherPanel(BuildContext context, PanelId sourceSide) =>
+      _runMultiPanelTransfer(context, sourceSide, TransferOperation.copy);
 
+  /// Move selected entries to every selected target, then delete the source.
+  Future<void> moveToOtherPanel(BuildContext context, PanelId sourceSide) =>
+      _runMultiPanelTransfer(context, sourceSide, TransferOperation.move);
+
+  Future<void> _runMultiPanelTransfer(
+    BuildContext context,
+    PanelId sourceSide,
+    TransferOperation operation,
+  ) async {
+    final sourceState = _panelState(sourceSide);
     if (!sourceState.activeTab.hasSelection) return;
 
-    final destSide = sourceSide == PanelSide.a ? PanelSide.b : PanelSide.a;
-    final destState = destSide == PanelSide.a
-        ? ref.read(panelAProvider)
-        : ref.read(panelBProvider);
-
-    final l10n = gen.AppLocalizations.of(context)!;
-    final destPath = await _showTransferDialog(
-      context,
-      '${l10n.actionCopy} (${sourceState.activeTab.selectionCount} items)',
-      l10n.actionCopy,
-      destState.activeTab.currentPath,
-    );
-
-    if (destPath == null || destPath.isEmpty) return;
-
-    final sourceProvider = _getProviderForSide(sourceSide);
-    final destProvider = _getProviderForSide(destSide);
-    final service = ref.read(fileOperationsServiceProvider.notifier);
-
-    final entries = sourceState.activeTab.selectedEntries;
-    _triggerAnimation(
+    final targetOperation = operation == TransferOperation.move
+        ? PanelTargetOperation.move
+        : PanelTargetOperation.copy;
+    final destinationPanelIds = await _selectTargetPanels(
       context,
       sourceSide,
-      TransferOperation.copy,
-      entries.isNotEmpty && entries.first.isDirectory,
+      targetOperation,
     );
+    if (destinationPanelIds.isEmpty || !context.mounted) return;
 
-    await service.copy(
-      sourceProvider: sourceProvider,
-      entries: sourceState.activeTab.selectedEntries,
-      destProvider: destProvider,
-      destPath: destPath,
-      overwriteCallback: (fileName) => _showOverwriteDialog(context, fileName),
-    );
-
-    await ref.read(panelControllerProvider.notifier).refresh(destSide);
-  }
-
-  /// Move selected entries from source panel to the other panel
-  Future<void> moveToOtherPanel(
-    BuildContext context,
-    PanelSide sourceSide,
-  ) async {
-    final sourceState = sourceSide == PanelSide.a
-        ? ref.read(panelAProvider)
-        : ref.read(panelBProvider);
-
-    if (!sourceState.activeTab.hasSelection) return;
-
-    final destSide = sourceSide == PanelSide.a ? PanelSide.b : PanelSide.a;
-    final destState = destSide == PanelSide.a
-        ? ref.read(panelAProvider)
-        : ref.read(panelBProvider);
-
+    final workspaceSnapshot = ref.read(panelWorkspaceProvider);
+    final destinationPaths = <PanelId, String>{
+      for (final panelId in destinationPanelIds)
+        panelId: workspaceSnapshot.panel(panelId).activeTab.currentPath,
+    };
     final l10n = gen.AppLocalizations.of(context)!;
-    final destPath = await _showTransferDialog(
-      context,
-      '${l10n.actionMove} (${sourceState.activeTab.selectionCount} items)',
-      l10n.actionMove,
-      destState.activeTab.currentPath,
-    );
-
-    if (destPath == null || destPath.isEmpty) return;
-
-    final sourceProvider = _getProviderForSide(sourceSide);
-    final destProvider = _getProviderForSide(destSide);
-    final service = ref.read(fileOperationsServiceProvider.notifier);
-
-    final entries = sourceState.activeTab.selectedEntries;
-    _triggerAnimation(
-      context,
-      sourceSide,
-      TransferOperation.move,
-      entries.isNotEmpty && entries.first.isDirectory,
-    );
-
-    try {
-      await service.move(
-        sourceProvider: sourceProvider,
-        entries: entries,
-        destProvider: destProvider,
-        destPath: destPath,
+    final actionLabel = operation == TransferOperation.move
+        ? l10n.actionMove
+        : l10n.actionCopy;
+    if (destinationPanelIds.length == 1) {
+      final destinationPanelId = destinationPanelIds.single;
+      final destinationPath = await _showTransferDialog(
+        context,
+        '$actionLabel (${sourceState.activeTab.selectionCount} items)',
+        actionLabel,
+        destinationPaths[destinationPanelId]!,
       );
-
-      // Clear selection and refresh both panels
-      if (sourceSide == PanelSide.a) {
-        ref.read(panelAProvider.notifier).clearSelection();
-      } else {
-        ref.read(panelBProvider.notifier).clearSelection();
+      if (destinationPath == null ||
+          destinationPath.isEmpty ||
+          !context.mounted) {
+        return;
       }
+      destinationPaths[destinationPanelId] = destinationPath;
+    }
 
-      await ref.read(panelControllerProvider.notifier).refresh(sourceSide);
-      await ref.read(panelControllerProvider.notifier).refresh(destSide);
-    } catch (e) {
-      ref.read(operationProgressProvider.notifier).clear();
-      if (context.mounted) {
-        _showErrorSnackBar(context, e.toString());
+    final sourceProvider = _getProviderForSide(sourceSide);
+    final destinationProviders = <PanelId, StorageProvider?>{};
+    for (final panelId in destinationPanelIds) {
+      try {
+        destinationProviders[panelId] = _getProviderForSide(panelId);
+      } catch (_) {
+        destinationProviders[panelId] = null;
       }
     }
+    final service = ref.read(fileOperationsServiceProvider.notifier);
+    final entries = sourceState.activeTab.selectedEntries;
+    final firstDestinationPanelId = destinationPanelIds.first;
+    _triggerAnimation(
+      context,
+      sourceSide,
+      operation,
+      entries.isNotEmpty && entries.first.isDirectory,
+      destinationPanelId: firstDestinationPanelId,
+    );
+
+    const coordinator = MultiPanelTransferCoordinator();
+    final result = await coordinator.execute(
+      operation: operation,
+      targetPanelIds: destinationPanelIds,
+      transferTarget: (panelId) {
+        final destinationProvider = destinationProviders[panelId];
+        if (destinationProvider == null) {
+          throw StateError('Destination panel connection is unavailable.');
+        }
+        return service.copy(
+          sourceProvider: sourceProvider,
+          entries: entries,
+          destProvider: destinationProvider,
+          destPath: destinationPaths[panelId]!,
+          isMove: operation == TransferOperation.move,
+          publishCompletion: false,
+          overwriteCallback: (fileName) {
+            if (!context.mounted) return Future<String?>.value();
+            return _showOverwriteDialog(context, fileName);
+          },
+        );
+      },
+      deleteSource: operation == TransferOperation.move
+          ? () => service.delete(
+              provider: sourceProvider,
+              entries: entries,
+              hideProgress: true,
+            )
+          : null,
+      publishFinalProgress: ref
+          .read(operationProgressProvider.notifier)
+          .setProgress,
+    );
+
+    final currentWorkspace = ref.read(panelWorkspaceProvider);
+    for (final panelId in result.successfulPanelIds) {
+      if (currentWorkspace.panels.containsKey(panelId)) {
+        await ref.read(panelControllerProvider.notifier).refresh(panelId);
+      }
+    }
+    if (result.sourceDeleted &&
+        currentWorkspace.panels.containsKey(sourceSide)) {
+      ref.read(panelWorkspaceProvider.notifier).clearSelection(sourceSide);
+      await ref.read(panelControllerProvider.notifier).refresh(sourceSide);
+    }
+
+    if (!context.mounted) return;
+    if (result.isSuccessful) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            l10n.multiTransferSuccess(result.successfulTargetCount),
+          ),
+        ),
+      );
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) => MultiPanelTransferResultDialog(
+        result: result,
+        panelNumbers: {
+          for (final panelId in destinationPanelIds)
+            panelId: workspaceSnapshot.panelOrder.indexOf(panelId) + 1,
+        },
+      ),
+    );
   }
 
   /// Shows a dialog asking what to do when a destination file already exists.
@@ -726,96 +834,105 @@ class FileOperationsActions extends _$FileOperationsActions {
     return result;
   }
 
-  /// Synchronize selected panel to the other panel
-  Future<void> syncPanels(BuildContext context, PanelSide sourceSide) async {
-    final l10n = gen.AppLocalizations.of(context)!;
-    final destSide = sourceSide == PanelSide.a ? PanelSide.b : PanelSide.a;
+  /// Synchronize one source panel to every selected target panel.
+  Future<void> syncPanels(BuildContext context, PanelId sourceSide) async {
+    final destinationPanelIds = await _selectTargetPanels(
+      context,
+      sourceSide,
+      PanelTargetOperation.sync,
+      allowMultiple: true,
+    );
+    if (destinationPanelIds.isEmpty || !context.mounted) return;
 
-    final sourceState = sourceSide == PanelSide.a
-        ? ref.read(panelAProvider)
-        : ref.read(panelBProvider);
-    final destState = destSide == PanelSide.a
-        ? ref.read(panelAProvider)
-        : ref.read(panelBProvider);
-
+    final workspaceSnapshot = ref.read(panelWorkspaceProvider);
+    final sourceState = workspaceSnapshot.panel(sourceSide);
     final sourcePath = sourceState.activeTab.currentPath;
-    final destPath = destState.activeTab.currentPath;
-
     final sourceProvider = _getProviderForSide(sourceSide);
-    final destProvider = _getProviderForSide(destSide);
-
+    final destinationStates = {
+      for (final panelId in destinationPanelIds)
+        panelId: workspaceSnapshot.panel(panelId),
+    };
+    final destinationProviders = <PanelId, StorageProvider?>{};
+    for (final panelId in destinationPanelIds) {
+      try {
+        destinationProviders[panelId] = _getProviderForSide(panelId);
+      } catch (_) {
+        destinationProviders[panelId] = null;
+      }
+    }
     final service = ref.read(fileOperationsServiceProvider.notifier);
-
-    // Step 1: Analyze
-    final syncItems = await service.analyzeSync(
-      sourceProvider: sourceProvider,
-      sourcePath: sourcePath,
-      destProvider: destProvider,
-      destPath: destPath,
+    const coordinator = MultiPanelSyncCoordinator();
+    final result = await coordinator.execute(
+      targetPanelIds: destinationPanelIds,
+      analyzeTarget: (panelId) {
+        final destinationProvider = destinationProviders[panelId];
+        if (destinationProvider == null) {
+          throw StateError('Destination panel connection is unavailable.');
+        }
+        return service.analyzeSync(
+          sourceProvider: sourceProvider,
+          sourcePath: sourcePath,
+          destProvider: destinationProvider,
+          destPath: destinationStates[panelId]!.activeTab.currentPath,
+          publishCompletion: false,
+        );
+      },
+      previewTarget: (panelId, syncItems) async {
+        if (!context.mounted) return null;
+        final destinationState = destinationStates[panelId]!;
+        final destinationProvider = destinationProviders[panelId]!;
+        final destinationPath = destinationState.activeTab.currentPath;
+        return showDialog<List<SyncItem>>(
+          context: context,
+          barrierDismissible: false,
+          builder: (dialogContext) => SyncPreviewDialog(
+            sourcePath: sourcePath,
+            destPath: destinationPath,
+            items: syncItems,
+            onSave: (selection) => _saveSyncJob(
+              dialogContext,
+              sourceProviderId: sourceState.activeTab.providerId,
+              sourcePath: sourcePath,
+              sourceDisplayName: sourceProvider.displayName,
+              destinationProviderId: destinationState.activeTab.providerId,
+              destinationPath: destinationPath,
+              destinationDisplayName: destinationProvider.displayName,
+              selection: selection,
+            ),
+          ),
+        );
+      },
+      executeTarget: (panelId, selectedItems) => service.executeSync(
+        sourceProvider: sourceProvider,
+        destProvider: destinationProviders[panelId]!,
+        destPath: destinationStates[panelId]!.activeTab.currentPath,
+        selectedItems: selectedItems,
+        publishCompletion: false,
+      ),
+      publishFinalProgress: ref
+          .read(operationProgressProvider.notifier)
+          .setProgress,
     );
 
-    if (syncItems.isEmpty) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(l10n.syncNoChanges)));
+    final currentWorkspace = ref.read(panelWorkspaceProvider);
+    if (currentWorkspace.panels.containsKey(sourceSide)) {
+      await ref.read(panelControllerProvider.notifier).refresh(sourceSide);
+    }
+    for (final panelId in result.refreshedPanelIds) {
+      if (ref.read(panelWorkspaceProvider).panels.containsKey(panelId)) {
+        await ref.read(panelControllerProvider.notifier).refresh(panelId);
       }
-      return;
     }
 
-    // Step 2: Show Preview Dialog
     if (!context.mounted) return;
-
-    final selectedItems = await showDialog<List<SyncItem>>(
+    await showDialog<void>(
       context: context,
-      barrierDismissible: false,
-      builder: (context) => SyncPreviewDialog(
-        sourcePath: sourcePath,
-        destPath: destPath,
-        items: syncItems,
-        onSave: (selection) => _saveSyncJob(
-          context,
-          sourceProviderId: sourceState.activeTab.providerId,
-          sourcePath: sourcePath,
-          sourceDisplayName: sourceProvider.displayName,
-          destinationProviderId: destState.activeTab.providerId,
-          destinationPath: destPath,
-          destinationDisplayName: destProvider.displayName,
-          selection: selection,
-        ),
-      ),
-    );
-
-    if (selectedItems == null || selectedItems.isEmpty) return;
-
-    // Step 3: Execute Sync
-    final result = await service.executeSync(
-      sourceProvider: sourceProvider,
-      destProvider: destProvider,
-      destPath: destPath,
-      selectedItems: selectedItems,
-    );
-
-    // Refresh panels after sync
-    await ref.read(panelControllerProvider.notifier).refresh(sourceSide);
-    await ref.read(panelControllerProvider.notifier).refresh(destSide);
-
-    if (!context.mounted) return;
-    final message = result.cancelled
-        ? l10n.syncCancelled
-        : result.failedFiles > 0
-        ? l10n.syncResultFailures(
-            result.updatedFiles,
-            result.createdFiles,
-            result.failedFiles,
-          )
-        : l10n.syncResultSummary(result.updatedFiles, result.createdFiles);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: result.failedFiles > 0
-            ? Theme.of(context).colorScheme.error
-            : null,
+      builder: (context) => MultiPanelSyncResultDialog(
+        result: result,
+        panelNumbers: {
+          for (final panelId in destinationPanelIds)
+            panelId: workspaceSnapshot.panelOrder.indexOf(panelId) + 1,
+        },
       ),
     );
   }
@@ -914,21 +1031,23 @@ class FileOperationsActions extends _$FileOperationsActions {
   /// Handle Drag and Drop between panels (instant copy)
   Future<void> handleDragAndDrop(
     BuildContext context,
-    PanelSide sourceSide,
-    PanelSide destSide,
+    PanelId sourceSide,
+    PanelId destSide,
     List<FileEntry> entries,
   ) async {
-    if (sourceSide == destSide) return;
-    if (entries.isEmpty) return;
+    final resolvedDestination = PanelDragPolicy.resolveTarget(
+      sourcePanelId: sourceSide,
+      targetPanelId: destSide,
+      entryCount: entries.length,
+    );
+    if (resolvedDestination == null) return;
 
-    final destState = destSide == PanelSide.a
-        ? ref.read(panelAProvider)
-        : ref.read(panelBProvider);
+    final destState = _panelState(resolvedDestination);
 
     final destPath = destState.activeTab.currentPath;
 
     final sourceProvider = _getProviderForSide(sourceSide);
-    final destProvider = _getProviderForSide(destSide);
+    final destProvider = _getProviderForSide(resolvedDestination);
     final service = ref.read(fileOperationsServiceProvider.notifier);
 
     _triggerAnimation(
@@ -936,6 +1055,7 @@ class FileOperationsActions extends _$FileOperationsActions {
       sourceSide,
       TransferOperation.copy,
       entries.isNotEmpty && entries.first.isDirectory,
+      destinationPanelId: resolvedDestination,
     );
 
     await service.copy(
@@ -945,14 +1065,14 @@ class FileOperationsActions extends _$FileOperationsActions {
       destPath: destPath,
     );
 
-    await ref.read(panelControllerProvider.notifier).refresh(destSide);
+    await ref
+        .read(panelControllerProvider.notifier)
+        .refresh(resolvedDestination);
   }
 
   /// Delete selected entries from the given panel
-  Future<void> deleteSelected(BuildContext context, PanelSide side) async {
-    final state = side == PanelSide.a
-        ? ref.read(panelAProvider)
-        : ref.read(panelBProvider);
+  Future<void> deleteSelected(BuildContext context, PanelId side) async {
+    final state = _panelState(side);
 
     final entries = state.activeTab.selectedEntries;
     if (entries.isEmpty) return;
@@ -963,7 +1083,7 @@ class FileOperationsActions extends _$FileOperationsActions {
   /// Open a file with the system default application.
   Future<void> openWithDefault(
     BuildContext context,
-    PanelSide side,
+    PanelId side,
     FileEntry entry,
   ) async {
     final archiveService = ref.read(archiveServiceProvider.notifier);
@@ -1064,17 +1184,105 @@ class FileOperationsActions extends _$FileOperationsActions {
     }
   }
 
+  Future<MultiPanelTransferResult> _compressToPanels({
+    required List<FileEntry> entries,
+    required List<PanelId> destinationPanelIds,
+    required Map<PanelId, String> destinationPaths,
+    required String archiveName,
+    required ArchiveFormat format,
+    String? password,
+  }) async {
+    final archiveService = ref.read(archiveServiceProvider.notifier);
+    final progressNotifier = ref.read(operationProgressProvider.notifier);
+    final manifest = await archiveService.createManifest(entries);
+    await archiveService.checkManifestAvailableSpace(
+      manifest: manifest,
+      destinationDirectories: destinationPaths.values,
+      format: format,
+    );
+
+    var firstTargetAttempted = false;
+    String? sourceArchivePath;
+
+    return const MultiPanelTransferCoordinator().execute(
+      operation: TransferOperation.zip,
+      targetPanelIds: destinationPanelIds,
+      transferTarget: (panelId) async {
+        final destinationDirectory = destinationPaths[panelId]!;
+        final isFirstTarget = !firstTargetAttempted;
+        firstTargetAttempted = true;
+        TransferProgress? finalProgress;
+
+        if (isFirstTarget) {
+          await for (final progress in archiveService.compressManifest(
+            manifest: manifest,
+            destDir: destinationDirectory,
+            archiveName: archiveName,
+            format: format,
+            password: password,
+          )) {
+            if (progress.isFinished) {
+              finalProgress = progress;
+            } else {
+              progressNotifier.setProgress(progress);
+            }
+          }
+          if (finalProgress?.state == TransferState.completed) {
+            sourceArchivePath = archiveService.archivePath(
+              destinationDirectory: destinationDirectory,
+              archiveName: archiveName,
+              format: format,
+            );
+          }
+        } else if (sourceArchivePath != null) {
+          await for (final progress in archiveService.copyArchiveTo(
+            manifest: manifest,
+            sourceArchivePath: sourceArchivePath!,
+            destDir: destinationDirectory,
+            archiveName: archiveName,
+            format: format,
+          )) {
+            if (progress.isFinished) {
+              finalProgress = progress;
+            } else {
+              progressNotifier.setProgress(progress);
+            }
+          }
+        } else {
+          finalProgress = TransferProgress(
+            operation: TransferOperation.zip,
+            state: TransferState.failed,
+            error:
+                'İlk hedef arşivi oluşturamadı; diğer hedeflere kopyalama yapılmadı.',
+          );
+        }
+
+        return finalProgress ??
+            TransferProgress(
+              operation: TransferOperation.zip,
+              state: TransferState.failed,
+              error: 'Arşiv işlemi nihai sonuç üretmeden tamamlandı.',
+            );
+      },
+      publishFinalProgress: progressNotifier.setProgress,
+    );
+  }
+
   /// Compress selected entries into an archive
   Future<void> compressEntries(
     BuildContext context,
-    PanelSide side,
+    PanelId side,
     List<FileEntry> entries,
     ArchiveFormat format,
   ) async {
     final l10n = gen.AppLocalizations.of(context)!;
-    final destPanelState = side == PanelSide.a
-        ? ref.read(panelBProvider)
-        : ref.read(panelAProvider);
+    final destinationPanelIds = await _selectArchiveTargetPanels(context, side);
+    if (destinationPanelIds.isEmpty || !context.mounted) return;
+    final workspaceSnapshot = ref.read(panelWorkspaceProvider);
+    final destinationPaths = <PanelId, String>{
+      for (final panelId in destinationPanelIds)
+        panelId: workspaceSnapshot.panel(panelId).activeTab.currentPath,
+    };
 
     // Suggest archive name based on first entry or selection
     final suggestedName = entries.length == 1 ? entries.first.name : 'archive';
@@ -1113,53 +1321,75 @@ class FileOperationsActions extends _$FileOperationsActions {
 
     if (result == null || result.isEmpty) return;
 
-    final archiveService = ref.read(archiveServiceProvider.notifier);
-    final progressNotifier = ref.read(operationProgressProvider.notifier);
-
-    // Sıkıştırma başladığında tek bir kopyalama animasyonu göster
+    // Show one animation at the start; completion is published only once.
     _triggerAnimation(
       context,
       side,
       TransferOperation.copy,
       entries.isNotEmpty && entries.first.isDirectory,
+      destinationPanelId: destinationPanelIds.first,
     );
 
+    MultiPanelTransferResult multiResult;
     try {
-      final progressStream = archiveService.compress(
+      multiResult = await _compressToPanels(
         entries: entries,
-        destDir: destPanelState.activeTab.currentPath,
+        destinationPanelIds: destinationPanelIds,
+        destinationPaths: destinationPaths,
         archiveName: result,
         format: format,
       );
+    } catch (error) {
+      if (context.mounted) _showErrorSnackBar(context, error.toString());
+      return;
+    }
 
-      await for (final progress in progressStream) {
-        progressNotifier.setProgress(progress);
-      }
-
-      progressNotifier.clear();
-
-      // Refresh the destination panel
-      await ref
-          .read(panelControllerProvider.notifier)
-          .refresh(side == PanelSide.a ? PanelSide.b : PanelSide.a);
-    } catch (e) {
-      ref.read(operationProgressProvider.notifier).clear();
-      if (context.mounted) {
-        _showErrorSnackBar(context, e.toString());
+    final currentWorkspace = ref.read(panelWorkspaceProvider);
+    for (final panelId in multiResult.successfulPanelIds) {
+      if (currentWorkspace.panels.containsKey(panelId)) {
+        await ref.read(panelControllerProvider.notifier).refresh(panelId);
       }
     }
+
+    if (!context.mounted) return;
+    if (multiResult.isSuccessful) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            l10n.multiArchiveSuccess(multiResult.successfulTargetCount),
+          ),
+        ),
+      );
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) => MultiPanelTransferResultDialog(
+        result: multiResult,
+        panelNumbers: {
+          for (final panelId in destinationPanelIds)
+            panelId: workspaceSnapshot.panelOrder.indexOf(panelId) + 1,
+        },
+      ),
+    );
   }
 
   /// Compress entries into a password-protected ZIP.
   /// Shows an archive name dialog + password dialog before compressing.
   Future<void> compressEntriesWithPassword(
     BuildContext context,
-    PanelSide side,
+    PanelId side,
     List<FileEntry> entries,
   ) async {
-    final destPanelState = side == PanelSide.a
-        ? ref.read(panelBProvider)
-        : ref.read(panelAProvider);
+    final l10n = gen.AppLocalizations.of(context)!;
+    final destinationPanelIds = await _selectArchiveTargetPanels(context, side);
+    if (destinationPanelIds.isEmpty || !context.mounted) return;
+    final workspaceSnapshot = ref.read(panelWorkspaceProvider);
+    final destinationPaths = <PanelId, String>{
+      for (final panelId in destinationPanelIds)
+        panelId: workspaceSnapshot.panel(panelId).activeTab.currentPath,
+    };
 
     // 1. Ask for archive name
     final suggestedName = entries.length == 1 ? entries.first.name : 'archive';
@@ -1179,7 +1409,7 @@ class FileOperationsActions extends _$FileOperationsActions {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('İptal'),
+            child: Text(l10n.actionCancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, nameCtrl.text),
@@ -1231,7 +1461,7 @@ class FileOperationsActions extends _$FileOperationsActions {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx2),
-                child: const Text('İptal'),
+                child: Text(l10n.actionCancel),
               ),
               FilledButton(
                 onPressed: () {
@@ -1249,7 +1479,7 @@ class FileOperationsActions extends _$FileOperationsActions {
                   }
                   Navigator.pop(ctx2, pwdCtrl.text);
                 },
-                child: const Text('Sıkıştır'),
+                child: Text(l10n.actionCompress),
               ),
             ],
           ),
@@ -1260,75 +1490,60 @@ class FileOperationsActions extends _$FileOperationsActions {
     pwd2Ctrl.dispose();
     if (password == null) return;
 
-    // 3. Compress using native zip -e -P (macOS/Linux)
-    final destDir = destPanelState.activeTab.currentPath;
-    final sourceDir = side == PanelSide.a
-        ? ref.read(panelAProvider).activeTab.currentPath
-        : ref.read(panelBProvider).activeTab.currentPath;
+    // 3. Use the same manifest, producer and fan-out path as normal archives.
+    MultiPanelTransferResult multiResult;
+    try {
+      multiResult = await _compressToPanels(
+        entries: entries,
+        destinationPanelIds: destinationPanelIds,
+        destinationPaths: destinationPaths,
+        archiveName: archiveName,
+        format: ArchiveFormat.zip,
+        password: password,
+      );
+    } catch (error) {
+      if (context.mounted) _showErrorSnackBar(context, error.toString());
+      return;
+    }
 
-    final outputPath = '$destDir/$archiveName.zip';
-    // Use relative names so we don't capture full absolute paths in the zip
-    final sourceNames = entries.map((e) => e.name).toList();
+    final currentWorkspace = ref.read(panelWorkspaceProvider);
+    for (final panelId in multiResult.successfulPanelIds) {
+      if (currentWorkspace.panels.containsKey(panelId)) {
+        await ref.read(panelControllerProvider.notifier).refresh(panelId);
+      }
+    }
 
-    // Show loading dialog
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => const AlertDialog(
-        content: Row(
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(width: 16),
-            Text('Şifreli ZIP oluşturuluyor, lütfen bekleyin...'),
-          ],
+    if (!context.mounted) return;
+    if (multiResult.isSuccessful) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            l10n.multiArchiveSuccess(multiResult.successfulTargetCount),
+          ),
         ),
+      );
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) => MultiPanelTransferResultDialog(
+        result: multiResult,
+        panelNumbers: {
+          for (final panelId in destinationPanelIds)
+            panelId: workspaceSnapshot.panelOrder.indexOf(panelId) + 1,
+        },
       ),
     );
-
-    try {
-      // GÜVENLIK: Şifreyi -P argümanı yerine stdin üzerinden gönderiyoruz
-      // böylece `ps aux` ile şifre görünmez.
-      final args = ['-r', '-e', '-P', '-', outputPath, ...sourceNames];
-      final process = await Process.start(
-        'zip',
-        args,
-        workingDirectory: sourceDir,
-      );
-      process.stdin.writeln(password); // şifreyi stdin'e yaz
-      await process.stdin.close();
-      final exitCode = await process.exitCode;
-      final stderr = await process.stderr.transform(utf8.decoder).join();
-
-      // Close loading dialog
-      if (context.mounted) Navigator.pop(context);
-
-      if (exitCode != 0) {
-        throw Exception(stderr);
-      }
-
-      final destSide = side == PanelSide.a ? PanelSide.b : PanelSide.a;
-      await ref.read(panelControllerProvider.notifier).refresh(destSide);
-
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$archiveName.zip başarıyla oluşturuldu!')),
-        );
-      }
-    } catch (e) {
-      // Close loading dialog if still open
-      if (context.mounted) Navigator.pop(context);
-      if (context.mounted) _showErrorSnackBar(context, e.toString());
-    }
   }
 
   Future<void> extractArchive(
     BuildContext context,
-    PanelSide side,
+    PanelId side,
     FileEntry entry,
   ) async {
-    final destPanelState = side == PanelSide.a
-        ? ref.read(panelBProvider)
-        : ref.read(panelAProvider);
+    final destinationPanelId = _otherPanelId(side);
+    final destPanelState = _panelState(destinationPanelId);
 
     final archiveService = ref.read(archiveServiceProvider.notifier);
 
@@ -1378,7 +1593,6 @@ class FileOperationsActions extends _$FileOperationsActions {
     }
 
     try {
-      final destSide = side == PanelSide.a ? PanelSide.b : PanelSide.a;
       final progressNotifier = ref.read(operationProgressProvider.notifier);
 
       Stream<TransferProgress> progressStream;
@@ -1410,7 +1624,9 @@ class FileOperationsActions extends _$FileOperationsActions {
 
       progressNotifier.clear();
 
-      await ref.read(panelControllerProvider.notifier).refresh(destSide);
+      await ref
+          .read(panelControllerProvider.notifier)
+          .refresh(destinationPanelId);
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1562,8 +1778,9 @@ class FileOperationsActions extends _$FileOperationsActions {
         },
       ).then((_) {
         // Automatically refresh panels when the dialog is closed
-        ref.read(panelControllerProvider.notifier).refresh(PanelSide.a);
-        ref.read(panelControllerProvider.notifier).refresh(PanelSide.b);
+        for (final panelId in ref.read(panelWorkspaceProvider).panelOrder) {
+          ref.read(panelControllerProvider.notifier).refresh(panelId);
+        }
       });
     }
   }

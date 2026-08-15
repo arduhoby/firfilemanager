@@ -10,6 +10,7 @@ import 'package:path/path.dart';
 import '../models/connection_profile.dart';
 import '../models/file_entry.dart';
 import '../models/transfer_progress.dart';
+import '../hidden_entry_policy.dart';
 import '../storage_provider.dart';
 
 /// A [StorageProvider] that connects to SFTP servers using `dartssh2`.
@@ -34,7 +35,8 @@ class SftpProvider implements StorageProvider {
   SSHClient? _client;
   SftpClient? _sftp;
   bool _isConnected = false;
-  final StreamController<bool> _connectionController = StreamController<bool>.broadcast();
+  final StreamController<bool> _connectionController =
+      StreamController<bool>.broadcast();
 
   @override
   String get displayName => 'SFTP: ${profile.name}';
@@ -96,7 +98,7 @@ class SftpProvider implements StorageProvider {
     }
     _sftp = null;
     _client = null;
-    
+
     if (!_connectionController.isClosed) {
       _connectionController.add(false);
       await _connectionController.close();
@@ -106,7 +108,10 @@ class SftpProvider implements StorageProvider {
   @override
   Future<List<FileEntry>> list(String path, [ListOptions? options]) async {
     if (!_isConnected || _sftp == null) {
-      throw StorageException('Not connected', code: StorageException.networkError);
+      throw StorageException(
+        'Not connected',
+        code: StorageException.networkError,
+      );
     }
 
     try {
@@ -118,7 +123,9 @@ class SftpProvider implements StorageProvider {
             // Skip . and .. entries
             if (item.filename == '.' || item.filename == '..') return false;
             // Filter hidden files
-            if (!showHidden && item.filename.startsWith('.')) return false;
+            if (!showHidden && HiddenEntryPolicy.isDotHidden(item.filename)) {
+              return false;
+            }
             return true;
           })
           .map((item) => _sftpItemToFileEntry(item, path))
@@ -136,7 +143,10 @@ class SftpProvider implements StorageProvider {
   @override
   Future<FileEntry> stat(String path) async {
     if (!_isConnected || _sftp == null) {
-      throw StorageException('Not connected', code: StorageException.networkError);
+      throw StorageException(
+        'Not connected',
+        code: StorageException.networkError,
+      );
     }
 
     try {
@@ -149,10 +159,12 @@ class SftpProvider implements StorageProvider {
         modified: attrs.modifyTime != null
             ? DateTime.fromMillisecondsSinceEpoch(attrs.modifyTime! * 1000)
             : null,
-        permissions: attrs.mode?.value != null ? _permissionsFromMode(attrs.mode!.value) : null,
+        permissions: attrs.mode?.value != null
+            ? _permissionsFromMode(attrs.mode!.value)
+            : null,
         owner: attrs.userID?.toString(),
         group: attrs.groupID?.toString(),
-        hidden: basename(path).startsWith('.'),
+        hidden: HiddenEntryPolicy.isDotHidden(basename(path)),
       );
     } catch (e) {
       throw StorageException(
@@ -165,7 +177,10 @@ class SftpProvider implements StorageProvider {
   }
 
   @override
-  Stream<TransferProgress> read(String path, {CancelToken? cancelToken}) async* {
+  Stream<TransferProgress> read(
+    String path, {
+    CancelToken? cancelToken,
+  }) async* {
     if (!_isConnected || _sftp == null) {
       yield TransferProgress(
         operation: TransferOperation.read,
@@ -237,7 +252,13 @@ class SftpProvider implements StorageProvider {
     }
 
     try {
-      final file = await _sftp!.open(path, mode: SftpFileOpenMode.write | SftpFileOpenMode.create | SftpFileOpenMode.truncate);
+      final file = await _sftp!.open(
+        path,
+        mode:
+            SftpFileOpenMode.write |
+            SftpFileOpenMode.create |
+            SftpFileOpenMode.truncate,
+      );
       var bytesWritten = 0;
 
       await for (final chunk in data) {
@@ -289,7 +310,12 @@ class SftpProvider implements StorageProvider {
         final stat = await _sftp!.stat(sourcePath);
         if (stat.isDirectory) {
           // Directory copy - recursive
-          yield* _copyDirectorySftp(sourcePath, destProvider, destPath, cancelToken);
+          yield* _copyDirectorySftp(
+            sourcePath,
+            destProvider,
+            destPath,
+            cancelToken,
+          );
         } else {
           // File copy via read + write
           final totalBytes = stat.size ?? 0;
@@ -298,7 +324,10 @@ class SftpProvider implements StorageProvider {
           final sourceFile = await _sftp!.open(sourcePath);
           final destFile = await destProvider._sftp!.open(
             destPath,
-            mode: SftpFileOpenMode.write | SftpFileOpenMode.create | SftpFileOpenMode.truncate,
+            mode:
+                SftpFileOpenMode.write |
+                SftpFileOpenMode.create |
+                SftpFileOpenMode.truncate,
           );
 
           await for (final chunk in sourceFile.read()) {
@@ -356,7 +385,11 @@ class SftpProvider implements StorageProvider {
       });
 
       // Write to dest
-      await for (final progress in destProvider.write(destPath, controller.stream, cancelToken: cancelToken)) {
+      await for (final progress in destProvider.write(
+        destPath,
+        controller.stream,
+        cancelToken: cancelToken,
+      )) {
         if (progress.state == TransferState.inProgress) {
           yield progress.copyWith(
             operation: TransferOperation.copy,
@@ -376,7 +409,7 @@ class SftpProvider implements StorageProvider {
     String destPath,
     CancelToken? cancelToken,
   ) async* {
-    final entries = await list(sourcePath);
+    final entries = await list(sourcePath, const ListOptions(showHidden: true));
     var filesTransferred = 0;
     final totalFiles = entries.length;
 
@@ -395,9 +428,19 @@ class SftpProvider implements StorageProvider {
       final destEntry = joinPath(destPath, entry.name);
 
       if (entry.isDirectory) {
-        yield* _copyDirectorySftp(srcEntry, destProvider, destEntry, cancelToken);
+        yield* _copyDirectorySftp(
+          srcEntry,
+          destProvider,
+          destEntry,
+          cancelToken,
+        );
       } else {
-        yield* copy(srcEntry, destProvider, destEntry, cancelToken: cancelToken);
+        yield* copy(
+          srcEntry,
+          destProvider,
+          destEntry,
+          cancelToken: cancelToken,
+        );
       }
 
       filesTransferred++;
@@ -420,7 +463,10 @@ class SftpProvider implements StorageProvider {
   @override
   Future<void> move(String sourcePath, String destPath) async {
     if (!_isConnected || _sftp == null) {
-      throw StorageException('Not connected', code: StorageException.networkError);
+      throw StorageException(
+        'Not connected',
+        code: StorageException.networkError,
+      );
     }
 
     try {
@@ -445,7 +491,10 @@ class SftpProvider implements StorageProvider {
   @override
   Future<void> delete(String path) async {
     if (!_isConnected || _sftp == null) {
-      throw StorageException('Not connected', code: StorageException.networkError);
+      throw StorageException(
+        'Not connected',
+        code: StorageException.networkError,
+      );
     }
 
     try {
@@ -474,7 +523,10 @@ class SftpProvider implements StorageProvider {
   @override
   Future<void> mkdir(String path) async {
     if (!_isConnected || _sftp == null) {
-      throw StorageException('Not connected', code: StorageException.networkError);
+      throw StorageException(
+        'Not connected',
+        code: StorageException.networkError,
+      );
     }
 
     try {
@@ -521,7 +573,11 @@ class SftpProvider implements StorageProvider {
   String dirname(String path) => p.dirname(path);
 
   @override
-  Future<List<FileEntry>> search(String path, String query, {bool recursive = false}) async {
+  Future<List<FileEntry>> search(
+    String path,
+    String query, {
+    bool recursive = false,
+  }) async {
     final results = <FileEntry>[];
     final queryLower = query.toLowerCase();
 
@@ -579,10 +635,12 @@ class SftpProvider implements StorageProvider {
       modified: item.attr.modifyTime != null
           ? DateTime.fromMillisecondsSinceEpoch(item.attr.modifyTime! * 1000)
           : null,
-      permissions: item.attr.mode?.value != null ? _permissionsFromMode(item.attr.mode!.value) : null,
+      permissions: item.attr.mode?.value != null
+          ? _permissionsFromMode(item.attr.mode!.value)
+          : null,
       owner: item.attr.userID?.toString(),
       group: item.attr.groupID?.toString(),
-      hidden: name.startsWith('.'),
+      hidden: HiddenEntryPolicy.isDotHidden(name),
       symlink: item.attr.isSymbolicLink,
     );
   }

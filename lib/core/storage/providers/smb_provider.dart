@@ -6,6 +6,7 @@ import 'package:smb_connect/smb_connect.dart';
 import '../models/connection_profile.dart';
 import '../models/file_entry.dart';
 import '../models/transfer_progress.dart';
+import '../hidden_entry_policy.dart';
 import '../storage_provider.dart';
 
 /// A [StorageProvider] that connects to SMB shares using `smb_connect`.
@@ -136,7 +137,13 @@ class SmbProvider implements StorageProvider {
       return list
           .where((item) {
             if (item.name == '.' || item.name == '..') return false;
-            if (!showHidden && item.isHidden()) return false;
+            if (!showHidden &&
+                HiddenEntryPolicy.isHidden(
+                  item.name,
+                  hasPlatformHiddenAttribute: item.isHidden(),
+                )) {
+              return false;
+            }
             return true;
           })
           .map(
@@ -449,7 +456,7 @@ class SmbProvider implements StorageProvider {
     CopyOptions options,
     CancelToken? cancelToken,
   ) async* {
-    final entries = await list(sourcePath);
+    final entries = await list(sourcePath, const ListOptions(showHidden: true));
     await destProvider.mkdir(destPath);
 
     for (final entry in entries) {

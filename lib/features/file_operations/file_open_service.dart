@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -5,6 +6,9 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+
+import '../../core/storage/providers/local_provider.dart';
+import '../../core/storage/storage_provider.dart';
 
 part 'file_open_service.g.dart';
 
@@ -97,6 +101,67 @@ FileOpenCommand resolveKateOpenCommand({
   required String katePath,
   required String filePath,
 }) => FileOpenCommand(katePath, [filePath], waitForExit: false);
+
+bool supportsTerminalOpen(FileOpenPlatform platform) => switch (platform) {
+  FileOpenPlatform.macOS ||
+  FileOpenPlatform.windows ||
+  FileOpenPlatform.linux => true,
+  FileOpenPlatform.android || FileOpenPlatform.unsupported => false,
+};
+
+bool supportsTerminalOpenForProvider({
+  required FileOpenPlatform platform,
+  required StorageProvider provider,
+}) => supportsTerminalOpen(platform) && provider is LocalProvider;
+
+String _encodePowerShellCommand(String command) {
+  final bytes = <int>[];
+  for (final codeUnit in command.codeUnits) {
+    bytes
+      ..add(codeUnit & 0xff)
+      ..add((codeUnit >> 8) & 0xff);
+  }
+  return base64Encode(bytes);
+}
+
+List<FileOpenCommand> resolveTerminalOpenCommands({
+  required FileOpenPlatform platform,
+  required String path,
+}) => switch (platform) {
+  FileOpenPlatform.macOS => [
+    FileOpenCommand('open', ['-a', 'Terminal', path]),
+  ],
+  FileOpenPlatform.windows => [
+    FileOpenCommand('wt.exe', ['-d', path], waitForExit: false),
+    FileOpenCommand('cmd.exe', [
+      '/d',
+      '/s',
+      '/c',
+      'start',
+      '',
+      'powershell.exe',
+      '-NoExit',
+      '-EncodedCommand',
+      _encodePowerShellCommand(
+        "Set-Location -LiteralPath '${path.replaceAll("'", "''")}'",
+      ),
+    ]),
+  ],
+  FileOpenPlatform.linux => [
+    FileOpenCommand('x-terminal-emulator', [
+      '--working-directory=$path',
+    ], waitForExit: false),
+    FileOpenCommand('gnome-terminal', [
+      '--working-directory=$path',
+    ], waitForExit: false),
+    FileOpenCommand('konsole', ['--workdir', path], waitForExit: false),
+    FileOpenCommand('xfce4-terminal', [
+      '--working-directory=$path',
+    ], waitForExit: false),
+    FileOpenCommand('kitty', ['--directory', path], waitForExit: false),
+  ],
+  FileOpenPlatform.android || FileOpenPlatform.unsupported => const [],
+};
 
 Future<bool> invokeNativeFileAction(
   String method,
@@ -287,25 +352,24 @@ class FileOpenService extends _$FileOpenService {
   }
 
   /// Open a terminal at the specified path
-  Future<bool> openInTerminal(String path) async {
-    try {
-      if (Platform.isMacOS) {
-        await Process.run('open', ['-a', 'Terminal', path]);
-      } else if (Platform.isWindows) {
-        await Process.run('cmd', [
-          '/c',
-          'start',
-          'powershell',
-          '-NoExit',
-          '-Command',
-          'cd "$path"',
-        ]);
-      } else if (Platform.isLinux) {
-        await Process.run('x-terminal-emulator', ['--working-directory=$path']);
-      }
-      return true;
-    } catch (e) {
+  Future<bool> openInTerminal(
+    String path, {
+    required StorageProvider provider,
+  }) async {
+    if (!supportsTerminalOpenForProvider(
+          platform: currentFileOpenPlatform,
+          provider: provider,
+        ) ||
+        !await Directory(path).exists()) {
       return false;
     }
+
+    for (final command in resolveTerminalOpenCommands(
+      platform: currentFileOpenPlatform,
+      path: path,
+    )) {
+      if (await _execute(command)) return true;
+    }
+    return false;
   }
 }

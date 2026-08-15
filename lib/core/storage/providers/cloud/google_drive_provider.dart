@@ -22,20 +22,22 @@ class GoogleDriveProvider implements StorageProvider {
   final GoogleSignIn _googleSignIn;
 
   GoogleDriveProvider({required this.profile, this.clientId, this.clientSecret})
-      : _googleSignIn = GoogleSignIn(
-          scopes: [drive.DriveApi.driveScope],
-          // On Android, we don't need to specify clientId if it's registered in Cloud Console.
-          // On iOS, we would pass the iOS Client ID here.
-          // On Desktop/Web, we can pass the Web Client ID here.
-          clientId: Platform.isAndroid || Platform.isIOS ? null : (clientId ?? Env.googleDriveClientId),
-        );
+    : _googleSignIn = GoogleSignIn(
+        scopes: [drive.DriveApi.driveScope],
+        // On Android, we don't need to specify clientId if it's registered in Cloud Console.
+        // On iOS, we would pass the iOS Client ID here.
+        // On Desktop/Web, we can pass the Web Client ID here.
+        clientId: Platform.isAndroid || Platform.isIOS
+            ? null
+            : (clientId ?? Env.googleDriveClientId),
+      );
 
   @override
   String get displayName => profile.name ?? 'Google Drive';
 
   @override
   bool get isConnected => _api != null;
-  
+
   @override
   Stream<bool> get connectionStateChanges => const Stream.empty();
 
@@ -71,7 +73,7 @@ class GoogleDriveProvider implements StorageProvider {
   Future<void> disconnect() async {
     _api = null;
   }
-  
+
   String _resolveId(String path) {
     if (path == '/' || path.isEmpty) return 'root';
     return path;
@@ -90,14 +92,16 @@ class GoogleDriveProvider implements StorageProvider {
     final items = <FileEntry>[];
     for (final f in fileList.files ?? <drive.File>[]) {
       final isDir = f.mimeType == 'application/vnd.google-apps.folder';
-      items.add(FileEntry(
-        name: f.name ?? 'unknown',
-        path: f.id ?? '', 
-        isDirectory: isDir,
-        size: f.size != null ? int.tryParse(f.size!) ?? 0 : 0,
-        modified: f.modifiedTime ?? DateTime.now(),
-        permissions: '',
-      ));
+      items.add(
+        FileEntry(
+          name: f.name ?? 'unknown',
+          path: f.id ?? '',
+          isDirectory: isDir,
+          size: f.size != null ? int.tryParse(f.size!) ?? 0 : 0,
+          modified: f.modifiedTime ?? DateTime.now(),
+          permissions: '',
+        ),
+      );
     }
     return items;
   }
@@ -107,7 +111,7 @@ class GoogleDriveProvider implements StorageProvider {
     _checkConnection();
     final id = _resolveId(path);
     if (id == 'root') {
-       return FileEntry(
+      return FileEntry(
         name: 'root',
         path: 'root',
         isDirectory: true,
@@ -116,16 +120,21 @@ class GoogleDriveProvider implements StorageProvider {
         permissions: '',
       );
     }
-    final f = await _api!.files.get(id, $fields: 'id, name, mimeType, size, modifiedTime') as drive.File;
+    final f =
+        await _api!.files.get(
+              id,
+              $fields: 'id, name, mimeType, size, modifiedTime',
+            )
+            as drive.File;
     final isDir = f.mimeType == 'application/vnd.google-apps.folder';
     return FileEntry(
-        name: f.name ?? 'unknown',
-        path: f.id ?? '',
-        isDirectory: isDir,
-        size: f.size != null ? int.tryParse(f.size!) ?? 0 : 0,
-        modified: f.modifiedTime ?? DateTime.now(),
-        permissions: '',
-      );
+      name: f.name ?? 'unknown',
+      path: f.id ?? '',
+      isDirectory: isDir,
+      size: f.size != null ? int.tryParse(f.size!) ?? 0 : 0,
+      modified: f.modifiedTime ?? DateTime.now(),
+      permissions: '',
+    );
   }
 
   @override
@@ -135,20 +144,25 @@ class GoogleDriveProvider implements StorageProvider {
   }) async* {
     _checkConnection();
     final id = _resolveId(path);
-    
+
     yield TransferProgress(
       operation: TransferOperation.read,
       state: TransferState.inProgress,
     );
-    
+
     try {
-      final media = await _api!.files.get(id, downloadOptions: drive.DownloadOptions.fullMedia) as drive.Media;
+      final media =
+          await _api!.files.get(
+                id,
+                downloadOptions: drive.DownloadOptions.fullMedia,
+              )
+              as drive.Media;
       final totalBytes = media.length ?? 0;
       var bytesTransferred = 0;
-      
+
       await for (final chunk in media.stream) {
         if (cancelToken?.isCancelled ?? false) {
-           yield TransferProgress(
+          yield TransferProgress(
             operation: TransferOperation.read,
             state: TransferState.cancelled,
           );
@@ -162,14 +176,14 @@ class GoogleDriveProvider implements StorageProvider {
           totalBytes: totalBytes,
         );
       }
-      
+
       yield TransferProgress(
         operation: TransferOperation.read,
         state: TransferState.completed,
         bytesTransferred: bytesTransferred,
         totalBytes: totalBytes,
       );
-    } catch(e) {
+    } catch (e) {
       yield TransferProgress(
         operation: TransferOperation.read,
         state: TransferState.failed,
@@ -186,7 +200,9 @@ class GoogleDriveProvider implements StorageProvider {
   }) async* {
     _checkConnection();
     // Complex to implement cleanly without parent ID.
-    throw UnimplementedError('Write requires file metadata which is not provided by standard write(path, stream)');
+    throw UnimplementedError(
+      'Write requires file metadata which is not provided by standard write(path, stream)',
+    );
   }
 
   @override
@@ -198,31 +214,40 @@ class GoogleDriveProvider implements StorageProvider {
     CancelToken? cancelToken,
   }) async* {
     _checkConnection();
-    
+
     try {
       final sourceEntry = await stat(sourcePath);
       final totalBytes = sourceEntry.size;
       var bytesTransferred = 0;
 
       if (sourceEntry.isDirectory) {
-        yield* _copyDirectory(sourcePath, destProvider, destPath, options, cancelToken);
+        yield* _copyDirectory(
+          sourcePath,
+          destProvider,
+          destPath,
+          options,
+          cancelToken,
+        );
       } else {
         // If same provider, use native Google Drive copy
-        if (destProvider is GoogleDriveProvider && destProvider.profile.id == profile.id) {
+        if (destProvider is GoogleDriveProvider &&
+            destProvider.profile.id == profile.id) {
           yield TransferProgress(
             operation: TransferOperation.copy,
             state: TransferState.inProgress,
             bytesTransferred: 0,
             totalBytes: totalBytes,
           );
-          
+
           final file = drive.File();
-          final parentId = destProvider._resolveId(destProvider.dirname(destPath));
+          final parentId = destProvider._resolveId(
+            destProvider.dirname(destPath),
+          );
           file.parents = [parentId];
           file.name = destProvider.basename(destPath);
-          
+
           await _api!.files.copy(file, sourcePath);
-          
+
           yield TransferProgress(
             operation: TransferOperation.copy,
             state: TransferState.completed,
@@ -234,10 +259,15 @@ class GoogleDriveProvider implements StorageProvider {
 
         // Cross-provider copy:
         final id = _resolveId(sourcePath);
-        final media = await _api!.files.get(id, downloadOptions: drive.DownloadOptions.fullMedia) as drive.Media;
-        
+        final media =
+            await _api!.files.get(
+                  id,
+                  downloadOptions: drive.DownloadOptions.fullMedia,
+                )
+                as drive.Media;
+
         final controller = StreamController<List<int>>();
-        
+
         media.stream.listen(
           (chunk) {
             bytesTransferred += chunk.length;
@@ -248,7 +278,11 @@ class GoogleDriveProvider implements StorageProvider {
           cancelOnError: true,
         );
 
-        await for (final progress in destProvider.write(destPath, controller.stream, cancelToken: cancelToken)) {
+        await for (final progress in destProvider.write(
+          destPath,
+          controller.stream,
+          cancelToken: cancelToken,
+        )) {
           if (progress.state == TransferState.inProgress) {
             yield progress.copyWith(
               operation: TransferOperation.copy,
@@ -276,7 +310,7 @@ class GoogleDriveProvider implements StorageProvider {
     CopyOptions options,
     CancelToken? cancelToken,
   ) async* {
-    final entries = await list(sourcePath);
+    final entries = await list(sourcePath, const ListOptions(showHidden: true));
     var filesTransferred = 0;
     final totalFiles = entries.length;
 
@@ -297,9 +331,21 @@ class GoogleDriveProvider implements StorageProvider {
       final destEntry = destProvider.joinPath(destPath, entry.name);
 
       if (entry.isDirectory) {
-        yield* _copyDirectory(srcEntry, destProvider, destEntry, options, cancelToken);
+        yield* _copyDirectory(
+          srcEntry,
+          destProvider,
+          destEntry,
+          options,
+          cancelToken,
+        );
       } else {
-        yield* copy(srcEntry, destProvider, destEntry, options: options, cancelToken: cancelToken);
+        yield* copy(
+          srcEntry,
+          destProvider,
+          destEntry,
+          options: options,
+          cancelToken: cancelToken,
+        );
       }
 
       filesTransferred++;
@@ -333,7 +379,7 @@ class GoogleDriveProvider implements StorageProvider {
     final file = drive.File()..name = newName;
     await _api!.files.update(file, id);
   }
-  
+
   @override
   Future<void> move(String sourcePath, String destPath) async {
     throw UnimplementedError();
@@ -357,27 +403,31 @@ class GoogleDriveProvider implements StorageProvider {
 
   @override
   Future<DiskSpaceInfo?> getDiskSpaceInfo(String path) async => null;
-  
+
   @override
   Future<String> get homePath async => 'root';
-  
+
   @override
   String normalizePath(String path) => path;
-  
+
   @override
   String joinPath(String parent, String child) => child;
-  
+
   @override
   String basename(String path) => path;
-  
+
   @override
   String dirname(String path) => 'root';
 
   @override
-  Future<List<FileEntry>> search(String path, String query, {bool recursive = false}) async {
+  Future<List<FileEntry>> search(
+    String path,
+    String query, {
+    bool recursive = false,
+  }) async {
     _checkConnection();
     final gQuery = "name contains '$query' and trashed = false";
-    
+
     final fileList = await _api!.files.list(
       q: gQuery,
       $fields: 'files(id, name, mimeType, size, modifiedTime)',
@@ -386,18 +436,20 @@ class GoogleDriveProvider implements StorageProvider {
     final items = <FileEntry>[];
     for (final f in fileList.files ?? <drive.File>[]) {
       final isDir = f.mimeType == 'application/vnd.google-apps.folder';
-      items.add(FileEntry(
-        name: f.name ?? 'unknown',
-        path: f.id ?? '', 
-        isDirectory: isDir,
-        size: f.size != null ? int.tryParse(f.size!) ?? 0 : 0,
-        modified: f.modifiedTime ?? DateTime.now(),
-        permissions: '',
-      ));
+      items.add(
+        FileEntry(
+          name: f.name ?? 'unknown',
+          path: f.id ?? '',
+          isDirectory: isDir,
+          size: f.size != null ? int.tryParse(f.size!) ?? 0 : 0,
+          modified: f.modifiedTime ?? DateTime.now(),
+          permissions: '',
+        ),
+      );
     }
     return items;
   }
-  
+
   @override
   bool supports(ProviderCapability capability) {
     switch (capability) {
@@ -416,7 +468,7 @@ class GoogleDriveProvider implements StorageProvider {
         return false;
     }
   }
-  
+
   void _checkConnection() {
     if (!isConnected) {
       throw StorageException('Not connected to Google Drive');

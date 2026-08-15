@@ -6,12 +6,9 @@ import '../shell_adaptive/panel_controller.dart';
 import 'bookmark_repository.dart';
 
 class BookmarksMenuIcon extends ConsumerWidget {
-  final PanelSide side;
+  final PanelId side;
 
-  const BookmarksMenuIcon({
-    required this.side,
-    super.key,
-  });
+  const BookmarksMenuIcon({required this.side, super.key});
 
   void _showEditDialog(BuildContext context, WidgetRef ref, Bookmark bookmark) {
     final nameController = TextEditingController(text: bookmark.name);
@@ -46,11 +43,9 @@ class BookmarksMenuIcon extends ConsumerWidget {
                 final newName = nameController.text.trim();
                 final newPath = pathController.text.trim();
                 if (newName.isNotEmpty && newPath.isNotEmpty) {
-                  ref.read(bookmarkRepositoryProvider.notifier).updateBookmark(
-                        bookmark.id,
-                        newName,
-                        newPath,
-                      );
+                  ref
+                      .read(bookmarkRepositoryProvider.notifier)
+                      .updateBookmark(bookmark.id, newName, newPath);
                   Navigator.pop(context);
                 }
               },
@@ -65,7 +60,7 @@ class BookmarksMenuIcon extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final bookmarks = ref.watch(bookmarkRepositoryProvider);
-    final panelState = side == PanelSide.a ? ref.watch(panelAProvider) : ref.watch(panelBProvider);
+    final panelState = ref.watch(panelStateProvider(side));
     final currentPath = panelState.activeTab.currentPath;
     final isBookmarked = bookmarks.any((b) => b.path == currentPath);
     final theme = Theme.of(context);
@@ -80,7 +75,9 @@ class BookmarksMenuIcon extends ConsumerWidget {
       offset: const Offset(0, 30),
       onSelected: (value) {
         if (value == '__toggle__') {
-          ref.read(bookmarkRepositoryProvider.notifier).toggleBookmark(currentPath);
+          ref
+              .read(bookmarkRepositoryProvider.notifier)
+              .toggleBookmark(currentPath);
         } else if (value.isNotEmpty) {
           ref.read(panelControllerProvider.notifier).navigate(side, value);
         }
@@ -96,48 +93,55 @@ class BookmarksMenuIcon extends ConsumerWidget {
                 color: isBookmarked ? null : Colors.amber,
               ),
               const SizedBox(width: 8),
-              Text(isBookmarked ? 'Remove from Bookmarks' : 'Bookmark Current Directory'),
+              Text(
+                isBookmarked
+                    ? 'Remove from Bookmarks'
+                    : 'Bookmark Current Directory',
+              ),
             ],
           ),
         ),
         if (bookmarks.isNotEmpty) const PopupMenuDivider(),
-        ...bookmarks.map((bookmark) => PopupMenuItem(
-              value: bookmark.path,
-              child: Row(
-                children: [
-                  Icon(Icons.folder, size: 18, color: theme.colorScheme.primary),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      bookmark.name,
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                    ),
+        ...bookmarks.map(
+          (bookmark) => PopupMenuItem(
+            value: bookmark.path,
+            child: Row(
+              children: [
+                Icon(Icons.folder, size: 18, color: theme.colorScheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    bookmark.name,
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.edit, size: 16),
-                    onPressed: () {
-                      Navigator.pop(context); // Close the popup menu
-                      _showEditDialog(context, ref, bookmark);
-                    },
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    icon: const Icon(Icons.delete, size: 16, color: Colors.red),
-                    onPressed: () {
-                      Navigator.pop(context); // Close the popup menu
-                      ref.read(bookmarkRepositoryProvider.notifier).removeBookmark(bookmark.id);
-                    },
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-                ],
-              ),
-            )),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.edit, size: 16),
+                  onPressed: () {
+                    Navigator.pop(context); // Close the popup menu
+                    _showEditDialog(context, ref, bookmark);
+                  },
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(Icons.delete, size: 16, color: Colors.red),
+                  onPressed: () {
+                    Navigator.pop(context); // Close the popup menu
+                    ref
+                        .read(bookmarkRepositoryProvider.notifier)
+                        .removeBookmark(bookmark.id);
+                  },
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
 }
-

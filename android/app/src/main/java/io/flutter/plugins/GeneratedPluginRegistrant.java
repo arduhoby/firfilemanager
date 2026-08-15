@@ -26,6 +26,11 @@ public final class GeneratedPluginRegistrant {
       Log.e(TAG, "Error registering plugin bonsoir_android, fr.skyost.bonsoir.BonsoirPlugin", e);
     }
     try {
+      flutterEngine.getPlugins().add(new com.example.disk_usage.DiskUsagePlugin());
+    } catch (Exception e) {
+      Log.e(TAG, "Error registering plugin disk_usage, com.example.disk_usage.DiskUsagePlugin", e);
+    }
+    try {
       flutterEngine.getPlugins().add(new com.mr.flutter.plugin.filepicker.FilePickerPlugin());
     } catch (Exception e) {
       Log.e(TAG, "Error registering plugin file_picker, com.mr.flutter.plugin.filepicker.FilePickerPlugin", e);
@@ -54,6 +59,11 @@ public final class GeneratedPluginRegistrant {
       flutterEngine.getPlugins().add(new com.github.dart_lang.jni_flutter.JniFlutterPlugin());
     } catch (Exception e) {
       Log.e(TAG, "Error registering plugin jni_flutter, com.github.dart_lang.jni_flutter.JniFlutterPlugin", e);
+    }
+    try {
+      flutterEngine.getPlugins().add(new dev.fluttercommunity.plus.packageinfo.PackageInfoPlugin());
+    } catch (Exception e) {
+      Log.e(TAG, "Error registering plugin package_info_plus, dev.fluttercommunity.plus.packageinfo.PackageInfoPlugin", e);
     }
     try {
       flutterEngine.getPlugins().add(new com.baseflow.permissionhandler.PermissionHandlerPlugin());

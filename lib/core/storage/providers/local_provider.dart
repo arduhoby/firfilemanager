@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:disk_usage/disk_usage.dart';
 import 'package:mime/mime.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
@@ -10,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/connection_profile.dart';
 import '../models/file_entry.dart';
 import '../models/transfer_progress.dart';
+import '../hidden_entry_policy.dart';
 import '../storage_provider.dart';
 
 /// A [StorageProvider] that operates on the local filesystem using `dart:io`.
@@ -78,6 +80,7 @@ class LocalProvider implements StorageProvider {
     }
 
     final showHidden = options?.showHidden ?? false;
+    final windowsHiddenPaths = await HiddenEntryPolicy.windowsHiddenPaths(path);
     final result = <FileEntry>[];
 
     Object? streamError;
@@ -90,12 +93,21 @@ class LocalProvider implements StorageProvider {
 
     await for (final entity in stream) {
       final name = p.basename(entity.path);
+      final hasPlatformHiddenAttribute = windowsHiddenPaths.contains(
+        HiddenEntryPolicy.normalizeWindowsPath(entity.path),
+      );
+      final hidden = HiddenEntryPolicy.isHidden(
+        name,
+        hasPlatformHiddenAttribute: hasPlatformHiddenAttribute,
+      );
 
-      // Filter hidden files (Unix dotfiles)
-      if (!showHidden && name.startsWith('.')) continue;
+      if (!showHidden && hidden) continue;
 
       try {
         var entry = await _entityToFileEntry(entity);
+        if (entry.hidden != hidden) {
+          entry = entry.copyWith(hidden: hidden);
+        }
         if (sharedPaths.contains(entity.path)) {
           entry = entry.copyWith(isShared: true);
         }
@@ -434,7 +446,9 @@ class LocalProvider implements StorageProvider {
     CopyOptions options,
     CancelToken? cancelToken,
   ) async* {
-    final entries = await list(sourcePath);
+    // Copy is independent from panel visibility: dotfiles such as .git and
+    // Windows Hidden entries must always travel with their parent directory.
+    final entries = await list(sourcePath, const ListOptions(showHidden: true));
     var filesTransferred = 0;
     final totalFiles = entries.length;
 
@@ -652,24 +666,62 @@ class LocalProvider implements StorageProvider {
   @override
   Future<DiskSpaceInfo?> getDiskSpaceInfo(String path) async {
     try {
-      if (Platform.isMacOS || Platform.isLinux) {
-        final res = await Process.run('df', ['-k', path]);
-        if (res.exitCode == 0) {
-          final lines = res.stdout.toString().trim().split('\n');
-          if (lines.length >= 2) {
-            final parts = lines[1].trim().split(RegExp(r'\s+'));
-            if (parts.length >= 4) {
-              final totalKb = int.tryParse(parts[1]) ?? 0;
-              final usedKb = int.tryParse(parts[2]) ?? 0;
-              final freeKb = int.tryParse(parts[3]) ?? 0;
+      final totalBytes = await DiskUsage.totalSpace(path);
+      final freeBytes = await DiskUsage.freeSpace(path);
+      if (totalBytes != null && freeBytes != null && totalBytes > 0) {
+        return DiskSpaceInfo(
+          totalBytes: totalBytes,
+          freeBytes: freeBytes,
+          usedBytes: (totalBytes - freeBytes).clamp(0, totalBytes),
+        );
+      }
+    } catch (_) {
+      // Unit tests and older builds can lack a registered platform plugin.
+      // The desktop fallback below still queries the actual target volume.
+    }
 
-              if (totalKb > 0) {
-                return DiskSpaceInfo(
-                  totalBytes: totalKb * 1024,
-                  freeBytes: freeKb * 1024,
-                  usedBytes: usedKb * 1024,
-                );
-              }
+    try {
+      if (Platform.isWindows) {
+        final result = await Process.run('powershell.exe', [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          r'& { param([string]$targetPath) $root = [IO.Path]::GetPathRoot([IO.Path]::GetFullPath($targetPath)); $drive = [IO.DriveInfo]::new($root); Write-Output "$($drive.TotalSize) $($drive.AvailableFreeSpace)" }',
+          path,
+        ]);
+        if (result.exitCode == 0) {
+          final values = result.stdout.toString().trim().split(RegExp(r'\s+'));
+          if (values.length >= 2) {
+            final totalBytes = int.tryParse(values[values.length - 2]);
+            final freeBytes = int.tryParse(values.last);
+            if (totalBytes != null && freeBytes != null && totalBytes > 0) {
+              return DiskSpaceInfo(
+                totalBytes: totalBytes,
+                freeBytes: freeBytes,
+                usedBytes: (totalBytes - freeBytes).clamp(0, totalBytes),
+              );
+            }
+          }
+        }
+      } else if (Platform.isMacOS || Platform.isLinux || Platform.isAndroid) {
+        final executable = Platform.isAndroid ? '/system/bin/df' : 'df';
+        final result = await Process.run(executable, ['-Pk', path]);
+        if (result.exitCode == 0) {
+          final lines = result.stdout.toString().trim().split(RegExp(r'\r?\n'));
+          final parts = lines.last.trim().split(RegExp(r'\s+'));
+          if (parts.length >= 4) {
+            final totalKb = int.tryParse(parts[1]);
+            final usedKb = int.tryParse(parts[2]);
+            final freeKb = int.tryParse(parts[3]);
+            if (totalKb != null &&
+                usedKb != null &&
+                freeKb != null &&
+                totalKb > 0) {
+              return DiskSpaceInfo(
+                totalBytes: totalKb * 1024,
+                freeBytes: freeKb * 1024,
+                usedBytes: usedKb * 1024,
+              );
             }
           }
         }
@@ -734,7 +786,7 @@ class LocalProvider implements StorageProvider {
       modified: stat.modified,
       permissions: _permissionsToString(stat.mode),
       mimeType: isDir ? null : lookupMimeType(entity.path),
-      hidden: name.startsWith('.'),
+      hidden: HiddenEntryPolicy.isDotHidden(name),
       symlink: isSymlink,
       symlinkTarget: symlinkTarget,
     );
@@ -757,7 +809,7 @@ class LocalProvider implements StorageProvider {
       modified: stat.modified,
       permissions: _permissionsToString(stat.mode),
       mimeType: isDir ? null : lookupMimeType(path),
-      hidden: name.startsWith('.'),
+      hidden: HiddenEntryPolicy.isDotHidden(name),
       symlink: isSymlink,
     );
   }

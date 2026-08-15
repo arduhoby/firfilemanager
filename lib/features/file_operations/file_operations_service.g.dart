@@ -7,7 +7,7 @@ part of 'file_operations_service.dart';
 // **************************************************************************
 
 String _$fileOperationsServiceHash() =>
-    r'68ac3977108e7752198681a334824173b29abe1c';
+    r'21d5aa1674bb7b28861bea7e015315f6f6ae6190';
 
 /// Service that executes file operations (copy, move, delete, rename, mkdir)
 /// and updates the [OperationProgress] state.

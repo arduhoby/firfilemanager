@@ -70,7 +70,10 @@ class FileOperationsService extends _$FileOperationsService {
 
     final files = <FileEntry>[];
     var totalBytes = 0;
-    final children = await provider.list(entry.path);
+    final children = await provider.list(
+      entry.path,
+      const ListOptions(showHidden: true),
+    );
     for (final child in children) {
       final childPlan = await _measureEntry(provider, child);
       files.addAll(childPlan.files);
@@ -128,20 +131,37 @@ class FileOperationsService extends _$FileOperationsService {
   ///   'rename'    — auto-rename (add "copy N" suffix)
   ///   'skip'      — skip this file
   ///   null        — cancel entire operation
-  Future<void> copy({
+  Future<TransferProgress> copy({
     required StorageProvider sourceProvider,
     required List<FileEntry> entries,
     required StorageProvider destProvider,
     required String destPath,
     bool isMove = false,
+    bool publishCompletion = true,
     Future<String?> Function(String fileName)? overwriteCallback,
   }) async {
-    if (entries.isEmpty || _activeTokens.isNotEmpty) return;
+    final operation = isMove ? TransferOperation.move : TransferOperation.copy;
+    final progress = ref.read(operationProgressProvider.notifier);
+    if (entries.isEmpty) {
+      final result = TransferProgress(
+        operation: operation,
+        state: TransferState.completed,
+      );
+      if (publishCompletion) progress.setProgress(result);
+      return result;
+    }
+    if (_activeTokens.isNotEmpty) {
+      final result = TransferProgress(
+        operation: operation,
+        state: TransferState.failed,
+        error: 'Another file operation is already running.',
+      );
+      progress.setProgress(result);
+      return result;
+    }
 
     final cancelToken = CancelToken();
     _activeTokens.add(cancelToken);
-    final progress = ref.read(operationProgressProvider.notifier);
-    final operation = isMove ? TransferOperation.move : TransferOperation.copy;
     progress.setProgress(
       TransferProgress(
         operation: operation,
@@ -160,21 +180,21 @@ class FileOperationsService extends _$FileOperationsService {
     try {
       transferPlan = await _buildTransferPlan(sourceProvider, entries);
     } catch (error) {
-      progress.setProgress(
-        TransferProgress(
-          operation: operation,
-          state: TransferState.failed,
-          error: error.toString(),
-        ),
+      final result = TransferProgress(
+        operation: operation,
+        state: TransferState.failed,
+        error: error.toString(),
       );
+      progress.setProgress(result);
       _activeTokens.remove(cancelToken);
-      return;
+      return result;
     }
 
     var overallTotalBytes = transferPlan.totalBytes;
     var totalFiles = transferPlan.totalFiles;
     var overallBytesTransferred = 0;
     var operationFailed = false;
+    String? operationError;
     final transferredByPath = <String, int>{};
     final completedPaths = <String>{};
     final rateTracker = TransferRateTracker();
@@ -214,6 +234,10 @@ class FileOperationsService extends _$FileOperationsService {
         } else if (decision == 'skip') {
           overallTotalBytes -= rootPlan.totalBytes;
           totalFiles -= rootPlan.totalFiles;
+          if (isMove) {
+            operationFailed = true;
+            operationError = 'One or more entries were skipped.';
+          }
           continue;
         } else if (decision == 'rename') {
           var counter = 1;
@@ -349,10 +373,12 @@ class FileOperationsService extends _$FileOperationsService {
           );
           if (providerProgress.state == TransferState.failed) {
             operationFailed = true;
+            operationError ??= providerProgress.error;
           }
         }
       } catch (error) {
         operationFailed = true;
+        operationError ??= error.toString();
         try {
           if (await destProvider.exists(destEntryPath)) {
             await destProvider.delete(destEntryPath);
@@ -385,22 +411,27 @@ class FileOperationsService extends _$FileOperationsService {
     if (finalState == TransferState.completed) {
       overallBytesTransferred = overallTotalBytes;
     }
+    final result = TransferProgress(
+      operation: operation,
+      state: finalState,
+      currentFile: lastCurrentFile,
+      bytesTransferred: lastCurrentBytes,
+      totalBytes: lastCurrentTotal,
+      overallBytesTransferred: overallBytesTransferred,
+      overallTotalBytes: overallTotalBytes,
+      filesTransferred: completedPaths.length,
+      totalFiles: totalFiles,
+      speed: latestSpeed,
+      error: operationError,
+    );
     progress.setProgress(
-      TransferProgress(
-        operation: operation,
-        state: finalState,
-        currentFile: lastCurrentFile,
-        bytesTransferred: lastCurrentBytes,
-        totalBytes: lastCurrentTotal,
-        overallBytesTransferred: overallBytesTransferred,
-        overallTotalBytes: overallTotalBytes,
-        filesTransferred: completedPaths.length,
-        totalFiles: totalFiles,
-        speed: latestSpeed,
-      ),
+      finalState == TransferState.completed && !publishCompletion
+          ? result.copyWith(state: TransferState.inProgress)
+          : result,
     );
 
     _activeTokens.remove(cancelToken);
+    return result;
   }
 
   /// Move entries.
@@ -507,22 +538,33 @@ class FileOperationsService extends _$FileOperationsService {
       entries = entries.sublist(fallbackStart);
     }
 
-    await copy(
+    final copyResult = await copy(
       sourceProvider: sourceProvider,
       entries: entries,
       destProvider: destProvider,
       destPath: destPath,
       isMove: true,
+      publishCompletion: false,
     );
 
-    final currentProgress = ref.read(operationProgressProvider);
-    if (currentProgress?.state != TransferState.failed &&
-        currentProgress?.state != TransferState.cancelled) {
-      await delete(
-        provider: sourceProvider,
-        entries: entries,
-        hideProgress: true,
-      );
+    if (copyResult.state == TransferState.completed) {
+      final progress = ref.read(operationProgressProvider.notifier);
+      try {
+        await delete(
+          provider: sourceProvider,
+          entries: entries,
+          hideProgress: true,
+        );
+        progress.setProgress(copyResult);
+      } catch (error) {
+        progress.setProgress(
+          copyResult.copyWith(
+            state: TransferState.failed,
+            error: error.toString(),
+          ),
+        );
+        rethrow;
+      }
     }
   }
 
@@ -794,6 +836,7 @@ class FileOperationsService extends _$FileOperationsService {
     required String sourcePath,
     required StorageProvider destProvider,
     required String destPath,
+    bool publishCompletion = true,
   }) async {
     final cancelToken = CancelToken();
     _activeTokens.add(cancelToken);
@@ -801,7 +844,7 @@ class FileOperationsService extends _$FileOperationsService {
 
     progress.setProgress(
       TransferProgress(
-        operation: TransferOperation.copy,
+        operation: TransferOperation.sync,
         state: TransferState.inProgress,
         currentFile: FileEntry(
           name: 'Scanning...',
@@ -845,7 +888,7 @@ class FileOperationsService extends _$FileOperationsService {
             if (scannedCount % 50 == 0) {
               progress.setProgress(
                 TransferProgress(
-                  operation: TransferOperation.copy,
+                  operation: TransferOperation.sync,
                   state: TransferState.inProgress,
                   currentFile: FileEntry(
                     name: 'Scanning: $scannedCount files...',
@@ -957,7 +1000,7 @@ class FileOperationsService extends _$FileOperationsService {
           );
           progress.setProgress(
             TransferProgress(
-              operation: TransferOperation.copy,
+              operation: TransferOperation.sync,
               state: TransferState.inProgress,
               currentFile: FileEntry(
                 name:
@@ -983,7 +1026,7 @@ class FileOperationsService extends _$FileOperationsService {
       if (cancelToken.isCancelled) {
         progress.setProgress(
           TransferProgress(
-            operation: TransferOperation.copy,
+            operation: TransferOperation.sync,
             state: TransferState.cancelled,
           ),
         );
@@ -993,8 +1036,10 @@ class FileOperationsService extends _$FileOperationsService {
 
       progress.setProgress(
         TransferProgress(
-          operation: TransferOperation.copy,
-          state: TransferState.completed,
+          operation: TransferOperation.sync,
+          state: publishCompletion
+              ? TransferState.completed
+              : TransferState.inProgress,
         ),
       );
 
@@ -1005,7 +1050,7 @@ class FileOperationsService extends _$FileOperationsService {
     } catch (e) {
       progress.setProgress(
         TransferProgress(
-          operation: TransferOperation.copy,
+          operation: TransferOperation.sync,
           state: TransferState.failed,
           error: e.toString(),
         ),
@@ -1104,6 +1149,7 @@ class FileOperationsService extends _$FileOperationsService {
     required StorageProvider destProvider,
     required String destPath,
     required List<SyncItem> selectedItems,
+    bool publishCompletion = true,
   }) async {
     final cancelToken = CancelToken();
     _activeTokens.add(cancelToken);
@@ -1290,19 +1336,22 @@ class FileOperationsService extends _$FileOperationsService {
         overallBytesTransferred = overallTotalBytes;
         filesTransferred = selectedItems.length;
       }
+      final finalProgress = TransferProgress(
+        operation: TransferOperation.sync,
+        state: state,
+        currentFile: currentFile,
+        bytesTransferred: currentBytes,
+        totalBytes: currentTotal,
+        overallBytesTransferred: overallBytesTransferred,
+        overallTotalBytes: overallTotalBytes,
+        filesTransferred: filesTransferred,
+        totalFiles: selectedItems.length,
+        speed: speed,
+      );
       progress.setProgress(
-        TransferProgress(
-          operation: TransferOperation.sync,
-          state: state,
-          currentFile: currentFile,
-          bytesTransferred: currentBytes,
-          totalBytes: currentTotal,
-          overallBytesTransferred: overallBytesTransferred,
-          overallTotalBytes: overallTotalBytes,
-          filesTransferred: filesTransferred,
-          totalFiles: selectedItems.length,
-          speed: speed,
-        ),
+        state == TransferState.completed && !publishCompletion
+            ? finalProgress.copyWith(state: TransferState.inProgress)
+            : finalProgress,
       );
     } catch (error) {
       failedFiles++;

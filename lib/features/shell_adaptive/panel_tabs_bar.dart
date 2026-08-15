@@ -4,21 +4,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../file_operations/file_operations_state.dart';
 
 class PanelTabsBar extends ConsumerWidget {
-  const PanelTabsBar({
-    super.key,
-    required this.side,
-  });
+  const PanelTabsBar({super.key, required this.side});
 
-  final PanelSide side;
+  final PanelId side;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    
-    final panelState = side == PanelSide.a
-        ? ref.watch(panelAProvider)
-        : ref.watch(panelBProvider);
+
+    final panelState = ref.watch(panelStateProvider(side));
+    final panels = ref.read(panelWorkspaceProvider.notifier);
 
     final tabs = panelState.tabs;
     final activeIndex = panelState.activeTabIndex;
@@ -56,18 +52,16 @@ class PanelTabsBar extends ConsumerWidget {
                     child: InkWell(
                       borderRadius: BorderRadius.circular(6),
                       onTap: () {
-                        if (side == PanelSide.a) {
-                          ref.read(panelAProvider.notifier).setActiveTab(index);
-                        } else {
-                          ref.read(panelBProvider.notifier).setActiveTab(index);
-                        }
+                        panels.setActiveTab(side, index);
                       },
                       child: Container(
                         constraints: const BoxConstraints(maxWidth: 160),
                         padding: const EdgeInsets.symmetric(horizontal: 10),
                         decoration: BoxDecoration(
                           color: isActive
-                              ? (isDark ? const Color(0xFF38383A) : const Color(0xFFFFFFFF))
+                              ? (isDark
+                                    ? const Color(0xFF38383A)
+                                    : const Color(0xFFFFFFFF))
                               : Colors.transparent,
                           borderRadius: BorderRadius.circular(6),
                           boxShadow: isActive
@@ -76,7 +70,7 @@ class PanelTabsBar extends ConsumerWidget {
                                     color: Colors.black.withValues(alpha: 0.1),
                                     blurRadius: 2,
                                     offset: const Offset(0, 1),
-                                  )
+                                  ),
                                 ]
                               : null,
                           border: isActive
@@ -93,10 +87,14 @@ class PanelTabsBar extends ConsumerWidget {
                           children: [
                             Flexible(
                               child: Text(
-                                tab.currentPath == '/' ? 'Root' : tab.currentPath.split('/').last,
+                                tab.currentPath == '/'
+                                    ? 'Root'
+                                    : tab.currentPath.split('/').last,
                                 style: theme.textTheme.labelMedium?.copyWith(
                                   fontSize: 11,
-                                  fontWeight: isActive ? FontWeight.w500 : FontWeight.normal,
+                                  fontWeight: isActive
+                                      ? FontWeight.w500
+                                      : FontWeight.normal,
                                   color: isActive
                                       ? theme.colorScheme.onSurface
                                       : theme.colorScheme.onSurfaceVariant,
@@ -111,20 +109,17 @@ class PanelTabsBar extends ConsumerWidget {
                                 // optional: change icon color on hover
                               },
                               onTap: () {
-                                if (side == PanelSide.a) {
-                                  ref.read(panelAProvider.notifier).closeTab(index);
-                                } else {
-                                  ref.read(panelBProvider.notifier).closeTab(index);
-                                }
+                                panels.closeTab(side, index);
                               },
                               child: Padding(
                                 padding: const EdgeInsets.all(2),
                                 child: Icon(
                                   Icons.close,
                                   size: 12,
-                                  color: isActive 
-                                    ? theme.colorScheme.onSurfaceVariant 
-                                    : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                                  color: isActive
+                                      ? theme.colorScheme.onSurfaceVariant
+                                      : theme.colorScheme.onSurfaceVariant
+                                            .withValues(alpha: 0.5),
                                 ),
                               ),
                             ),
@@ -142,11 +137,7 @@ class PanelTabsBar extends ConsumerWidget {
             child: InkWell(
               borderRadius: BorderRadius.circular(4),
               onTap: () {
-                if (side == PanelSide.a) {
-                  ref.read(panelAProvider.notifier).addTab('/');
-                } else {
-                  ref.read(panelBProvider.notifier).addTab('/');
-                }
+                panels.addTab(side, '/');
               },
               child: const Padding(
                 padding: EdgeInsets.all(4),

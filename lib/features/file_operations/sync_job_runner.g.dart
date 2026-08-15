@@ -6,7 +6,7 @@ part of 'sync_job_runner.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$syncJobRunnerHash() => r'bb7abca7580ce6485220cce28d6c5be646d3e042';
+String _$syncJobRunnerHash() => r'1753d99b11e186690a470d43b7a585c7476d6503';
 
 /// See also [SyncJobRunner].
 @ProviderFor(SyncJobRunner)

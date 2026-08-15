@@ -6,7 +6,7 @@ part of 'sync_repositories.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$syncJobRepositoryHash() => r'17578677b9cf8b18308dceb56a90af77a06bac4a';
+String _$syncJobRepositoryHash() => r'2ac7db0c79c549f6eaacee7ed4a8a95e85c0abfb';
 
 /// See also [SyncJobRepository].
 @ProviderFor(SyncJobRepository)
@@ -23,7 +23,7 @@ final syncJobRepositoryProvider =
 
 typedef _$SyncJobRepository = Notifier<List<SyncJob>>;
 String _$syncHistoryRepositoryHash() =>
-    r'ca09b9ea69d81be460d709aadc71421f2c3e58e2';
+    r'fd90fdc5350e513f9f0048f2b14fef0a06df73d5';
 
 /// See also [SyncHistoryRepository].
 @ProviderFor(SyncHistoryRepository)

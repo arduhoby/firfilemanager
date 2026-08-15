@@ -601,4 +601,106 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get syncHistory => 'Geçmiş';
+
+  @override
+  String get panelAdd => 'Panel ekle';
+
+  @override
+  String get panelClose => 'Paneli kapat';
+
+  @override
+  String panelNumber(int number) {
+    return 'Panel $number';
+  }
+
+  @override
+  String get targetPanels => 'Hedef paneller';
+
+  @override
+  String get targetSourcePanel => 'Kaynak panel';
+
+  @override
+  String get targetOperationSync => 'Senkron';
+
+  @override
+  String targetSelectedSummary(int selected, int total) {
+    return '$total hedeften $selected tanesi seçili';
+  }
+
+  @override
+  String get targetSameLocation => 'Kaynak panelle aynı konum';
+
+  @override
+  String get targetConnectionUnavailable => 'Bağlantı kullanılamıyor';
+
+  @override
+  String get targetLocalPanelRequired =>
+      'Sıkıştırma için yerel bir hedef panel seçin';
+
+  @override
+  String get targetContinue => 'Devam et';
+
+  @override
+  String get multiTransferResultTitle => 'Aktarım sonuçları';
+
+  @override
+  String multiTransferSuccess(int count) {
+    return 'Aktarım $count hedef panel için tamamlandı';
+  }
+
+  @override
+  String multiTransferPartial(int successful, int total) {
+    return '$total hedef panelden $successful tanesi başarıyla tamamlandı';
+  }
+
+  @override
+  String get multiTransferCompleted => 'Tamamlandı';
+
+  @override
+  String get multiTransferFailed => 'Başarısız';
+
+  @override
+  String get multiTransferCancelled => 'İptal edildi';
+
+  @override
+  String get multiTransferSkipped => 'Başlatılmadı';
+
+  @override
+  String get multiTransferSourcePreserved =>
+      'Bütün hedefler başarıyla tamamlanmadığı için kaynak korundu.';
+
+  @override
+  String get multiArchiveResultTitle => 'Sıkıştırma sonuçları';
+
+  @override
+  String multiArchiveSuccess(int count) {
+    return 'Arşiv $count hedef panelde oluşturuldu';
+  }
+
+  @override
+  String get archiveLocalSourceRequired =>
+      'Sıkıştırma şu anda yalnızca yerel paneldeki dosyaları destekliyor.';
+
+  @override
+  String get multiSyncResultTitle => 'Senkron sonuçları';
+
+  @override
+  String multiSyncSummary(int successful, int total) {
+    return '$total hedef panelden $successful tanesi başarıyla tamamlandı';
+  }
+
+  @override
+  String get multiSyncCompleted => 'Senkron tamamlandı';
+
+  @override
+  String get multiSyncNoChanges => 'Zaten güncel';
+
+  @override
+  String get multiSyncFailed => 'Senkron başarısız';
+
+  @override
+  String get multiSyncCancelled => 'Senkron iptal edildi';
+
+  @override
+  String get multiSyncSkipped => 'Başlatılmadı';
 }

@@ -7,22 +7,21 @@ import 'package:webdav_client/webdav_client.dart';
 import '../../models/connection_profile.dart';
 import '../../models/file_entry.dart';
 import '../../models/transfer_progress.dart';
+import '../../hidden_entry_policy.dart';
 import '../../storage_provider.dart';
 
 class NextcloudProvider implements StorageProvider {
-  NextcloudProvider(
-    this.profile, {
-    this.password,
-  });
+  NextcloudProvider(this.profile, {this.password});
 
   @override
   final ConnectionProfile profile;
-  
+
   final String? password;
 
   Client? _client;
   bool _isConnected = false;
-  final StreamController<bool> _connectionController = StreamController<bool>.broadcast();
+  final StreamController<bool> _connectionController =
+      StreamController<bool>.broadcast();
 
   @override
   String get displayName => 'Nextcloud: ${profile.name}';
@@ -41,30 +40,35 @@ class NextcloudProvider implements StorageProvider {
       if (host.startsWith('http://')) host = host.substring(7);
       if (host.startsWith('https://')) host = host.substring(8);
       // Strip trailing slash if present
-      final cleanHost = host.endsWith('/') ? host.substring(0, host.length - 1) : host;
-      
+      final cleanHost = host.endsWith('/')
+          ? host.substring(0, host.length - 1)
+          : host;
+
       final portSuffix = (profile.port != null) ? ':${profile.port}' : '';
       final username = profile.username ?? '';
       final encodedUsername = Uri.encodeComponent(username);
-      
+
       if (username.isEmpty) {
-        throw Exception('Kullanıcı adı gerekli (Username is required for Nextcloud)');
+        throw Exception(
+          'Kullanıcı adı gerekli (Username is required for Nextcloud)',
+        );
       }
 
       // Modern Nextcloud WebDAV URL: /remote.php/dav/files/USERNAME/
-      final baseUrl = '$protocol://$cleanHost$portSuffix/remote.php/dav/files/$encodedUsername';
+      final baseUrl =
+          '$protocol://$cleanHost$portSuffix/remote.php/dav/files/$encodedUsername';
 
       if (profile.authMethod == AuthMethod.password) {
         if (password == null || password!.isEmpty) {
-          throw Exception('Şifre gerekli (Password is required for Basic Auth)');
+          throw Exception(
+            'Şifre gerekli (Password is required for Basic Auth)',
+          );
         }
-        _client = newClient(
-          baseUrl,
-          user: username,
-          password: password ?? '',
-        );
+        _client = newClient(baseUrl, user: username, password: password ?? '');
       } else {
-        throw Exception('Nextcloud OAuth is not fully implemented yet. Please use Basic Auth (username/password).');
+        throw Exception(
+          'Nextcloud OAuth is not fully implemented yet. Please use Basic Auth (username/password).',
+        );
       }
 
       // Test connection
@@ -73,18 +77,21 @@ class NextcloudProvider implements StorageProvider {
       _connectionController.add(true);
     } catch (e, stack) {
       _isConnected = false;
-      
+
       // Fallback: Try legacy WebDAV endpoint
       try {
         final protocol = profile.effectivePort == 443 ? 'https' : 'http';
         var host = profile.host ?? '';
         if (host.startsWith('http://')) host = host.substring(7);
         if (host.startsWith('https://')) host = host.substring(8);
-        final cleanHost = host.endsWith('/') ? host.substring(0, host.length - 1) : host;
+        final cleanHost = host.endsWith('/')
+            ? host.substring(0, host.length - 1)
+            : host;
         final portSuffix = (profile.port != null) ? ':${profile.port}' : '';
-        
-        final legacyBaseUrl = '$protocol://$cleanHost$portSuffix/remote.php/webdav';
-        
+
+        final legacyBaseUrl =
+            '$protocol://$cleanHost$portSuffix/remote.php/webdav';
+
         _client = newClient(
           legacyBaseUrl,
           user: profile.username ?? '',
@@ -95,7 +102,10 @@ class NextcloudProvider implements StorageProvider {
         _connectionController.add(true);
         return;
       } catch (fallbackError) {
-        throw StorageException('Nextcloud connection failed. Modern error: $e. Legacy error: $fallbackError', cause: fallbackError);
+        throw StorageException(
+          'Nextcloud connection failed. Modern error: $e. Legacy error: $fallbackError',
+          cause: fallbackError,
+        );
       }
     }
   }
@@ -112,28 +122,33 @@ class NextcloudProvider implements StorageProvider {
 
   @override
   Future<List<FileEntry>> list(String path, [ListOptions? options]) async {
-    if (!_isConnected || _client == null) throw StorageException('Not connected');
+    if (!_isConnected || _client == null)
+      throw StorageException('Not connected');
 
     try {
       final items = await _client!.readDir(path);
       final showHidden = options?.showHidden ?? false;
 
-      return items.where((item) {
-        final name = p.basename(item.path ?? '');
-        if (name == '.' || name == '..') return false;
-        if (!showHidden && name.startsWith('.')) return false;
-        return true;
-      }).map((item) {
-        final name = p.basename(item.path ?? '');
-        return FileEntry(
-          name: name,
-          path: item.path ?? '',
-          isDirectory: item.isDir ?? false,
-          size: item.size ?? 0,
-          modified: item.mTime,
-          hidden: name.startsWith('.'),
-        );
-      }).toList();
+      return items
+          .where((item) {
+            final name = p.basename(item.path ?? '');
+            if (name == '.' || name == '..') return false;
+            if (!showHidden && HiddenEntryPolicy.isDotHidden(name))
+              return false;
+            return true;
+          })
+          .map((item) {
+            final name = p.basename(item.path ?? '');
+            return FileEntry(
+              name: name,
+              path: item.path ?? '',
+              isDirectory: item.isDir ?? false,
+              size: item.size ?? 0,
+              modified: item.mTime,
+              hidden: HiddenEntryPolicy.isDotHidden(name),
+            );
+          })
+          .toList();
     } catch (e) {
       throw StorageException('Nextcloud list failed: $e', cause: e);
     }
@@ -141,7 +156,8 @@ class NextcloudProvider implements StorageProvider {
 
   @override
   Future<FileEntry> stat(String path) async {
-    if (!_isConnected || _client == null) throw StorageException('Not connected');
+    if (!_isConnected || _client == null)
+      throw StorageException('Not connected');
 
     try {
       final parent = p.dirname(path);
@@ -159,9 +175,16 @@ class NextcloudProvider implements StorageProvider {
   }
 
   @override
-  Stream<TransferProgress> read(String path, {CancelToken? cancelToken}) async* {
+  Stream<TransferProgress> read(
+    String path, {
+    CancelToken? cancelToken,
+  }) async* {
     if (!_isConnected || _client == null) {
-      yield TransferProgress(operation: TransferOperation.read, state: TransferState.failed, error: 'Not connected');
+      yield TransferProgress(
+        operation: TransferOperation.read,
+        state: TransferState.failed,
+        error: 'Not connected',
+      );
       return;
     }
 
@@ -182,14 +205,26 @@ class NextcloudProvider implements StorageProvider {
       tempFile.deleteSync();
       tempDir.deleteSync();
     } catch (e) {
-      yield TransferProgress(operation: TransferOperation.read, state: TransferState.failed, error: e.toString());
+      yield TransferProgress(
+        operation: TransferOperation.read,
+        state: TransferState.failed,
+        error: e.toString(),
+      );
     }
   }
 
   @override
-  Stream<TransferProgress> write(String path, Stream<List<int>> data, {CancelToken? cancelToken}) async* {
+  Stream<TransferProgress> write(
+    String path,
+    Stream<List<int>> data, {
+    CancelToken? cancelToken,
+  }) async* {
     if (!_isConnected || _client == null) {
-      yield TransferProgress(operation: TransferOperation.write, state: TransferState.failed, error: 'Not connected');
+      yield TransferProgress(
+        operation: TransferOperation.write,
+        state: TransferState.failed,
+        error: 'Not connected',
+      );
       return;
     }
 
@@ -205,12 +240,19 @@ class NextcloudProvider implements StorageProvider {
           await sink.close();
           tempFile.deleteSync();
           tempDir.deleteSync();
-          yield TransferProgress(operation: TransferOperation.write, state: TransferState.cancelled);
+          yield TransferProgress(
+            operation: TransferOperation.write,
+            state: TransferState.cancelled,
+          );
           return;
         }
         sink.add(chunk);
         bytesWritten += chunk.length;
-        yield TransferProgress(operation: TransferOperation.write, state: TransferState.inProgress, bytesTransferred: bytesWritten);
+        yield TransferProgress(
+          operation: TransferOperation.write,
+          state: TransferState.inProgress,
+          bytesTransferred: bytesWritten,
+        );
       }
 
       await sink.flush();
@@ -221,14 +263,28 @@ class NextcloudProvider implements StorageProvider {
       tempFile.deleteSync();
       tempDir.deleteSync();
 
-      yield TransferProgress(operation: TransferOperation.write, state: TransferState.completed, bytesTransferred: bytesWritten);
+      yield TransferProgress(
+        operation: TransferOperation.write,
+        state: TransferState.completed,
+        bytesTransferred: bytesWritten,
+      );
     } catch (e) {
-      yield TransferProgress(operation: TransferOperation.write, state: TransferState.failed, error: e.toString());
+      yield TransferProgress(
+        operation: TransferOperation.write,
+        state: TransferState.failed,
+        error: e.toString(),
+      );
     }
   }
 
   @override
-  Stream<TransferProgress> copy(String sourcePath, StorageProvider destProvider, String destPath, {CopyOptions options = const CopyOptions(), CancelToken? cancelToken}) async* {
+  Stream<TransferProgress> copy(
+    String sourcePath,
+    StorageProvider destProvider,
+    String destPath, {
+    CopyOptions options = const CopyOptions(),
+    CancelToken? cancelToken,
+  }) async* {
     final controller = StreamController<List<int>>();
     var bytesTransferred = 0;
 
@@ -243,20 +299,32 @@ class NextcloudProvider implements StorageProvider {
       controller.add(bytes);
       controller.close();
 
-      await for (final progress in destProvider.write(destPath, controller.stream, cancelToken: cancelToken)) {
-        yield progress.copyWith(operation: TransferOperation.copy, bytesTransferred: bytesTransferred);
+      await for (final progress in destProvider.write(
+        destPath,
+        controller.stream,
+        cancelToken: cancelToken,
+      )) {
+        yield progress.copyWith(
+          operation: TransferOperation.copy,
+          bytesTransferred: bytesTransferred,
+        );
       }
 
       tempFile.deleteSync();
       tempDir.deleteSync();
     } catch (e) {
-      yield TransferProgress(operation: TransferOperation.copy, state: TransferState.failed, error: e.toString());
+      yield TransferProgress(
+        operation: TransferOperation.copy,
+        state: TransferState.failed,
+        error: e.toString(),
+      );
     }
   }
 
   @override
   Future<void> move(String sourcePath, String destPath) async {
-    if (!_isConnected || _client == null) throw StorageException('Not connected');
+    if (!_isConnected || _client == null)
+      throw StorageException('Not connected');
     try {
       await _client!.rename(sourcePath, destPath, false);
     } catch (e) {
@@ -273,7 +341,8 @@ class NextcloudProvider implements StorageProvider {
 
   @override
   Future<void> delete(String path) async {
-    if (!_isConnected || _client == null) throw StorageException('Not connected');
+    if (!_isConnected || _client == null)
+      throw StorageException('Not connected');
     try {
       await _client!.remove(path);
     } catch (e) {
@@ -283,7 +352,8 @@ class NextcloudProvider implements StorageProvider {
 
   @override
   Future<void> mkdir(String path) async {
-    if (!_isConnected || _client == null) throw StorageException('Not connected');
+    if (!_isConnected || _client == null)
+      throw StorageException('Not connected');
     try {
       await _client!.mkdir(path);
     } catch (e) {
@@ -320,7 +390,11 @@ class NextcloudProvider implements StorageProvider {
   String dirname(String path) => p.dirname(path);
 
   @override
-  Future<List<FileEntry>> search(String path, String query, {bool recursive = false}) async {
+  Future<List<FileEntry>> search(
+    String path,
+    String query, {
+    bool recursive = false,
+  }) async {
     final results = <FileEntry>[];
     final queryLower = query.toLowerCase();
 

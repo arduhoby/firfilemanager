@@ -4,20 +4,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/storage/storage_provider_service.dart';
 import '../file_operations/file_operations_state.dart';
 import 'panel_controller.dart';
 
 class DoubleBackExitWrapper extends ConsumerStatefulWidget {
   final Widget child;
 
-  const DoubleBackExitWrapper({
-    required this.child,
-    super.key,
-  });
+  const DoubleBackExitWrapper({required this.child, super.key});
 
   @override
-  ConsumerState<DoubleBackExitWrapper> createState() => _DoubleBackExitWrapperState();
+  ConsumerState<DoubleBackExitWrapper> createState() =>
+      _DoubleBackExitWrapperState();
 }
 
 class _DoubleBackExitWrapperState extends ConsumerState<DoubleBackExitWrapper> {
@@ -35,18 +32,20 @@ class _DoubleBackExitWrapperState extends ConsumerState<DoubleBackExitWrapper> {
         if (didPop) return;
 
         // On mobile, panelA is the primary panel.
-        final panelAState = ref.read(panelAProvider);
+        final panelAState = ref.read(panelStateProvider(PanelId.a));
         final controller = ref.read(panelControllerProvider.notifier);
 
         // If we can go back in history, let's just go back in history.
         if (panelAState.activeTab.historyIndex > 0) {
-          controller.navigateBack(PanelSide.a);
+          controller.navigateBack(PanelId.a);
           return;
         }
 
         // If we reached here, we are at the root of history. Require double press to exit.
         final now = DateTime.now();
-        final isDoublePress = _lastBackPressTime != null && now.difference(_lastBackPressTime!) < const Duration(seconds: 2);
+        final isDoublePress =
+            _lastBackPressTime != null &&
+            now.difference(_lastBackPressTime!) < const Duration(seconds: 2);
 
         print('DOUBLE_BACK: isDoublePress=$isDoublePress');
 

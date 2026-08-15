@@ -14,6 +14,7 @@ import '../../core/storage/models/transfer_progress.dart';
 import '../../core/settings/recent_service.dart';
 import '../file_operations/archive_service.dart';
 import '../file_operations/file_operations_state.dart';
+import '../file_operations/panel_drag_policy.dart';
 import '../file_operations/file_open_service.dart';
 import '../file_operations/file_operations_service.dart';
 import '../shell_adaptive/panel_controller.dart';
@@ -27,7 +28,7 @@ import 'panel_tabs_bar.dart';
 
 /// Data class for drag-and-drop between panels
 class PanelDragData {
-  final PanelSide sourceSide;
+  final PanelId sourceSide;
   final List<FileEntry> entries;
 
   PanelDragData({required this.sourceSide, required this.entries});
@@ -38,7 +39,7 @@ class PanelDragData {
 class FilePanel extends ConsumerStatefulWidget {
   const FilePanel({required this.side, super.key});
 
-  final PanelSide side;
+  final PanelId side;
 
   @override
   ConsumerState<FilePanel> createState() => _FilePanelState();
@@ -89,14 +90,29 @@ class _FilePanelState extends ConsumerState<FilePanel> {
     super.dispose();
   }
 
-  PanelState get _panelState => widget.side == PanelSide.a
-      ? ref.watch(panelAProvider)
-      : ref.watch(panelBProvider);
+  PanelState get _panelState => ref.watch(panelStateProvider(widget.side));
 
   bool get _isActive => ref.watch(activePanelProvider) == widget.side;
 
+  PanelWorkspace get _panels => ref.read(panelWorkspaceProvider.notifier);
+
+  PanelId get _otherPanelId => ref
+      .read(panelWorkspaceProvider)
+      .panelOrder
+      .firstWhere((panelId) => panelId != widget.side);
+
+  StorageProvider _providerForPanel(PanelId panelId) {
+    final panel = ref.read(panelStateProvider(panelId));
+    if (panel.activeTab.providerId == 'local') {
+      return ref.read(localStorageProviderProvider);
+    }
+    return ref.read(
+      storageProviderRegistryProvider,
+    )[panel.activeTab.providerId]!;
+  }
+
   void _selectPanel() {
-    ref.read(activePanelProvider.notifier).setActive(widget.side);
+    _panels.setActive(widget.side);
     if (!_panelFocusNode.hasFocus) {
       _panelFocusNode.requestFocus();
     }
@@ -111,46 +127,24 @@ class _FilePanelState extends ConsumerState<FilePanel> {
 
     if (isShiftPressed && _lastSelectedPath != null) {
       // Range selection
-      if (widget.side == PanelSide.a) {
-        ref
-            .read(panelAProvider.notifier)
-            .selectRange(_lastSelectedPath!, entry.path);
-      } else {
-        ref
-            .read(panelBProvider.notifier)
-            .selectRange(_lastSelectedPath!, entry.path);
-      }
+      _panels.selectRange(widget.side, _lastSelectedPath!, entry.path);
     } else if (isControlPressed) {
       // Toggle selection
-      if (widget.side == PanelSide.a) {
-        ref.read(panelAProvider.notifier).toggleSelection(entry.path);
-      } else {
-        ref.read(panelBProvider.notifier).toggleSelection(entry.path);
-      }
+      _panels.toggleSelection(widget.side, entry.path);
       _lastSelectedPath = entry.path;
     } else {
       // Single selection
-      final isCurrentlySelected = widget.side == PanelSide.a
-          ? ref
-                .read(panelAProvider)
-                .activeTab
-                .selectedPaths
-                .contains(entry.path)
-          : ref
-                .read(panelBProvider)
-                .activeTab
-                .selectedPaths
-                .contains(entry.path);
+      final isCurrentlySelected = ref
+          .read(panelStateProvider(widget.side))
+          .activeTab
+          .selectedPaths
+          .contains(entry.path);
 
       if (isCurrentlySelected && _isActive && _editingEntryPath == null) {
-        // Zaten seçiliyse ve panel aktifse, inline rename başlat
+        // Zaten seçiliyse ve panel aktifse, satır içi yeniden adlandırmayı başlat.
         _startInlineRename(entry);
       } else {
-        if (widget.side == PanelSide.a) {
-          ref.read(panelAProvider.notifier).selectEntry(entry.path);
-        } else {
-          ref.read(panelBProvider.notifier).selectEntry(entry.path);
-        }
+        _panels.selectEntry(widget.side, entry.path);
         _lastSelectedPath = entry.path;
         setState(() => _editingEntryPath = null);
       }
@@ -159,7 +153,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
 
   void _onEntryDoubleTap(FileEntry entry) {
     if (_panelState.activeTab.searchQuery != null) {
-      final targetSide = widget.side == PanelSide.a ? PanelSide.b : PanelSide.a;
+      final targetSide = _otherPanelId;
       if (entry.isDirectory) {
         ref
             .read(panelControllerProvider.notifier)
@@ -177,11 +171,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
         // Wait briefly for navigate to load, then select it.
         // A more robust way would be to select it when navigation completes, but this is a quick attempt.
         Future.delayed(const Duration(milliseconds: 300), () {
-          if (targetSide == PanelSide.a) {
-            ref.read(panelAProvider.notifier).selectEntry(entry.path);
-          } else {
-            ref.read(panelBProvider.notifier).selectEntry(entry.path);
-          }
+          _panels.selectEntry(targetSide, entry.path);
         });
       }
     } else {
@@ -200,11 +190,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
     _selectPanel();
 
     if (!_panelState.activeTab.selectedPaths.contains(entry.path)) {
-      if (widget.side == PanelSide.a) {
-        ref.read(panelAProvider.notifier).selectEntry(entry.path);
-      } else {
-        ref.read(panelBProvider.notifier).selectEntry(entry.path);
-      }
+      _panels.selectEntry(widget.side, entry.path);
     }
 
     _showContextMenu(context, position, entry: entry);
@@ -238,19 +224,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
 
     if (entry != null && newName.isNotEmpty && newName != entry.name) {
       final actions = ref.read(fileOperationsActionsProvider.notifier);
-      final provider = widget.side == PanelSide.a
-          ? ref.read(panelAProvider).activeTab.providerId == 'local'
-                ? ref.read(localStorageProviderProvider)
-                : ref.read(storageProviderRegistryProvider)[ref
-                      .read(panelAProvider)
-                      .activeTab
-                      .providerId]!
-          : ref.read(panelBProvider).activeTab.providerId == 'local'
-          ? ref.read(localStorageProviderProvider)
-          : ref.read(storageProviderRegistryProvider)[ref
-                .read(panelBProvider)
-                .activeTab
-                .providerId]!;
+      final provider = _providerForPanel(widget.side);
 
       try {
         await ref
@@ -268,19 +242,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
   }
 
   Future<void> _calculateSizesForSelection(List<FileEntry> entries) async {
-    final provider = widget.side == PanelSide.a
-        ? (ref.read(panelAProvider).activeTab.providerId == 'local'
-              ? ref.read(localStorageProviderProvider)
-              : ref.read(storageProviderRegistryProvider)[ref
-                    .read(panelAProvider)
-                    .activeTab
-                    .providerId]!)
-        : (ref.read(panelBProvider).activeTab.providerId == 'local'
-              ? ref.read(localStorageProviderProvider)
-              : ref.read(storageProviderRegistryProvider)[ref
-                    .read(panelBProvider)
-                    .activeTab
-                    .providerId]!);
+    final provider = _providerForPanel(widget.side);
 
     for (final entry in entries) {
       if (!entry.isDirectory) continue;
@@ -316,6 +278,22 @@ class _FilePanelState extends ConsumerState<FilePanel> {
     return total;
   }
 
+  Future<void> _openInTerminal(String path) async {
+    final provider = _providerForPanel(widget.side);
+    final opened = await ref
+        .read(fileOpenServiceProvider.notifier)
+        .openInTerminal(path, provider: provider);
+    if (!mounted || opened) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Terminal açılamadı. Bu seçenek yalnızca yerel klasörlerde çalışır.',
+        ),
+      ),
+    );
+  }
+
   void _showContextMenu(
     BuildContext context,
     Offset position, {
@@ -328,6 +306,10 @@ class _FilePanelState extends ConsumerState<FilePanel> {
     final hasClipboardItems =
         clipboard != null && clipboard.sourcePaths.isNotEmpty;
     final editorName = preferredEditorName(currentFileOpenPlatform);
+    final canOpenInTerminal = supportsTerminalOpenForProvider(
+      platform: currentFileOpenPlatform,
+      provider: _providerForPanel(widget.side),
+    );
 
     // Build CascadeMenuItem list
     final List<CascadeMenuItem> items;
@@ -339,11 +321,12 @@ class _FilePanelState extends ConsumerState<FilePanel> {
             label: l10n.actionOpen,
             icon: Icons.folder_open,
           ),
-          const CascadeMenuItem(
-            value: 'openTerminal',
-            label: 'Open in Terminal',
-            icon: Icons.terminal,
-          ),
+          if (canOpenInTerminal)
+            const CascadeMenuItem(
+              value: 'openTerminal',
+              label: 'Terminalde aç',
+              icon: Icons.terminal,
+            ),
         ] else ...[
           CascadeMenuItem(
             value: 'openDefault',
@@ -493,11 +476,21 @@ class _FilePanelState extends ConsumerState<FilePanel> {
             label: l10n.actionPaste,
             icon: Icons.paste,
           ),
-        const CascadeMenuItem(
-          value: 'openTerminalBg',
-          label: 'Open in Terminal',
-          icon: Icons.terminal,
+        CascadeMenuItem(
+          value: 'toggleHiddenBg',
+          label: _panelState.activeTab.showHidden
+              ? 'Gizli dosyaları gizle'
+              : 'Gizli dosyaları göster',
+          icon: _panelState.activeTab.showHidden
+              ? Icons.visibility_off
+              : Icons.visibility,
         ),
+        if (canOpenInTerminal)
+          const CascadeMenuItem(
+            value: 'openTerminalBg',
+            label: 'Terminalde aç',
+            icon: Icons.terminal,
+          ),
         CascadeMenuItem(
           value: 'revealBg',
           label: l10n.actionRevealInFinder,
@@ -529,7 +522,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
 
     showCascadeMenu(context: context, position: position, items: items).then((
       value,
-    ) {
+    ) async {
       if (value == null) return;
 
       if (entry == null) {
@@ -540,10 +533,10 @@ class _FilePanelState extends ConsumerState<FilePanel> {
             actions.showNewFileDialog(context, widget.side);
           case 'paste':
             actions.paste(context, widget.side);
+          case 'toggleHiddenBg':
+            _panels.toggleHidden(widget.side);
           case 'openTerminalBg':
-            ref
-                .read(fileOpenServiceProvider.notifier)
-                .openInTerminal(_panelState.activeTab.currentPath);
+            await _openInTerminal(_panelState.activeTab.currentPath);
           case 'revealBg':
             ref
                 .read(fileOpenServiceProvider.notifier)
@@ -556,9 +549,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
               const SnackBar(content: Text('Path copied to clipboard')),
             );
           case 'equalPath':
-            final otherSide = widget.side == PanelSide.a
-                ? PanelSide.b
-                : PanelSide.a;
+            final otherSide = _otherPanelId;
             ref
                 .read(panelControllerProvider.notifier)
                 .navigate(
@@ -567,11 +558,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                   providerId: _panelState.activeTab.providerId,
                 );
           case 'selectAll':
-            if (widget.side == PanelSide.a) {
-              ref.read(panelAProvider.notifier).selectAll();
-            } else {
-              ref.read(panelBProvider.notifier).selectAll();
-            }
+            _panels.selectAll(widget.side);
           case 'refresh':
             ref.read(panelControllerProvider.notifier).refresh(widget.side);
         }
@@ -613,9 +600,9 @@ class _FilePanelState extends ConsumerState<FilePanel> {
         case 'move':
           actions.cutToClipboard(widget.side, entries);
         case 'openTerminal':
-          ref.read(fileOpenServiceProvider.notifier).openInTerminal(entry.path);
+          await _openInTerminal(entry.path);
         case 'paste':
-          // Her zaman actions.paste() kullan — animasyon, hata y\u00f6netimi ve clipboard temizleme
+          // Her zaman actions.paste() kullan: animasyon, hata yönetimi ve pano temizleme.
           // burada yap\u0131l\u0131yor. Direkt service.paste() \u00e7a\u011fr\u0131s\u0131 bu katmanlar\u0131 bypass eder.
           actions.paste(context, widget.side);
         case 'rename':
@@ -678,6 +665,15 @@ class _FilePanelState extends ConsumerState<FilePanel> {
 
     final isActive = _isActive;
     final theme = Theme.of(context);
+    final panelOrder = ref.watch(
+      panelWorkspaceProvider.select((workspace) => workspace.panelOrder),
+    );
+    final canAddPanel = ref.watch(
+      panelWorkspaceProvider.select((workspace) => workspace.canAddPanel),
+    );
+    final panelIndex = panelOrder.indexOf(widget.side);
+    final canRemovePanel =
+        panelOrder.length > PanelWorkspaceState.minPanelCount;
 
     return Focus(
       focusNode: _panelFocusNode,
@@ -711,11 +707,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
 
             if (hasModifier) {
               final currentPath = _panelState.activeTab.currentPath;
-              if (widget.side == PanelSide.a) {
-                ref.read(panelAProvider.notifier).addTab(currentPath);
-              } else {
-                ref.read(panelBProvider.notifier).addTab(currentPath);
-              }
+              _panels.addTab(widget.side, currentPath);
               return KeyEventResult.handled;
             }
           }
@@ -743,11 +735,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
           _selectPanel();
           setState(() => _editingEntryPath = null);
           // Click on empty area = clear selection
-          if (widget.side == PanelSide.a) {
-            ref.read(panelAProvider.notifier).clearSelection();
-          } else {
-            ref.read(panelBProvider.notifier).clearSelection();
-          }
+          _panels.clearSelection(widget.side);
         },
         onSecondaryTapUp: _onPanelSecondaryTap,
         child: Container(
@@ -773,6 +761,15 @@ class _FilePanelState extends ConsumerState<FilePanel> {
             borderRadius: BorderRadius.circular(8),
             child: Column(
               children: [
+                _buildPanelHeader(
+                  context,
+                  l10n,
+                  panelIndex: panelIndex,
+                  canAddPanel: canAddPanel,
+                  canRemovePanel: canRemovePanel,
+                  sourcePath: state.activeTab.currentPath,
+                  sourceProviderId: state.activeTab.providerId,
+                ),
                 PanelDriveBar(side: widget.side),
                 PanelTabsBar(side: widget.side),
                 PanelPathBar(side: widget.side),
@@ -795,6 +792,66 @@ class _FilePanelState extends ConsumerState<FilePanel> {
     );
   }
 
+  Widget _buildPanelHeader(
+    BuildContext context,
+    gen.AppLocalizations l10n, {
+    required int panelIndex,
+    required bool canAddPanel,
+    required bool canRemovePanel,
+    required String sourcePath,
+    required String sourceProviderId,
+  }) {
+    final theme = Theme.of(context);
+    return Container(
+      height: 28,
+      padding: const EdgeInsets.only(left: 8, right: 2),
+      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+      child: Row(
+        children: [
+          Icon(
+            Icons.view_agenda_outlined,
+            size: 13,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 5),
+          Text(
+            l10n.panelNumber(panelIndex + 1),
+            style: theme.textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          IconButton(
+            key: ValueKey('panel-add-${widget.side.value}'),
+            tooltip: l10n.panelAdd,
+            onPressed: canAddPanel
+                ? () => _panels.addPanel(
+                    path: sourcePath,
+                    providerId: sourceProviderId,
+                  )
+                : null,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 26, height: 26),
+            iconSize: 16,
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.add_rounded),
+          ),
+          const Spacer(),
+          if (canRemovePanel)
+            IconButton(
+              key: ValueKey('panel-close-${widget.side.value}'),
+              tooltip: l10n.panelClose,
+              onPressed: () => _panels.removePanel(widget.side),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 26, height: 26),
+              iconSize: 15,
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.close_rounded),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildColumnHeader(
     BuildContext context,
     gen.AppLocalizations l10n,
@@ -811,11 +868,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
       final isSorted = state.activeTab.sortField == field;
       return InkWell(
         onTap: () {
-          if (widget.side == PanelSide.a) {
-            ref.read(panelAProvider.notifier).toggleSort(field);
-          } else {
-            ref.read(panelBProvider.notifier).toggleSort(field);
-          }
+          _panels.toggleSort(widget.side, field);
         },
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -867,7 +920,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
           final showDate = w > 260;
           return Row(
             children: [
-              // Name column – always visible
+              // Name column - always visible
               Expanded(
                 flex: 1,
                 child: headerCell(l10n.sortByName, SortField.name),
@@ -897,7 +950,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                   ),
                 ),
 
-              // Size column – only when wide enough
+              // Size column - only when wide enough
               if (showSize)
                 SizedBox(
                   width: _sizeColWidth,
@@ -932,7 +985,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
                   ),
                 ),
 
-              // Date column – only when wide enough
+              // Date column - only when wide enough
               if (showDate)
                 SizedBox(
                   width: _dateColWidth,
@@ -974,11 +1027,7 @@ class _FilePanelState extends ConsumerState<FilePanel> {
           IconButton(
             icon: const Icon(Icons.close, size: 16),
             onPressed: () {
-              if (widget.side == PanelSide.a) {
-                ref.read(panelAProvider.notifier).setError(null);
-              } else {
-                ref.read(panelBProvider.notifier).setError(null);
-              }
+              _panels.setError(widget.side, null);
             },
             visualDensity: VisualDensity.compact,
           ),
@@ -1018,7 +1067,12 @@ class _FilePanelState extends ConsumerState<FilePanel> {
   ) {
     return DragTarget<PanelDragData>(
       onWillAcceptWithDetails: (details) {
-        return details.data.sourceSide != widget.side;
+        return PanelDragPolicy.resolveTarget(
+              sourcePanelId: details.data.sourceSide,
+              targetPanelId: widget.side,
+              entryCount: details.data.entries.length,
+            ) !=
+            null;
       },
       onAcceptWithDetails: (details) {
         final actions = ref.read(fileOperationsActionsProvider.notifier);
@@ -1296,7 +1350,7 @@ class _FileListTile extends ConsumerWidget {
   final FileEntry entry;
   final bool isSelected;
   final bool isActivePanel;
-  final PanelSide side;
+  final PanelId side;
   final PanelState panelState;
   final double sizeColWidth;
   final double dateColWidth;
@@ -1346,7 +1400,7 @@ class _FileListTile extends ConsumerWidget {
               final showDate = w > 260;
               return Row(
                 children: [
-                  // Icon + Name – always visible
+                  // Icon + Name - always visible
                   Expanded(
                     child: Row(
                       children: [
@@ -1436,7 +1490,7 @@ class _FileListTile extends ConsumerWidget {
                       ],
                     ),
                   ),
-                  // Size – only when panel is wide enough
+                  // Size - only when panel is wide enough
                   if (showSize)
                     SizedBox(
                       width: sizeColWidth,
@@ -1463,7 +1517,7 @@ class _FileListTile extends ConsumerWidget {
                               textAlign: TextAlign.right,
                             ),
                     ),
-                  // Date – only when panel is wide enough
+                  // Date - only when panel is wide enough
                   if (showDate)
                     SizedBox(
                       width: dateColWidth,

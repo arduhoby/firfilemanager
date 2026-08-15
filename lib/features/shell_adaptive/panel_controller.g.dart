@@ -6,14 +6,9 @@ part of 'panel_controller.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$panelControllerHash() => r'a008cc03772196f17a78b640be86374adbd9ac05';
+String _$panelControllerHash() => r'acad5d371c44f54302066ee65709fdb8a09abdf2';
 
-/// Controller that loads directory listings for panels.
-///
-/// Watches the panel's current path and loads entries from the
-/// appropriate [StorageProvider] whenever the path changes.
-///
-/// Copied from [PanelController].
+/// See also [PanelController].
 @ProviderFor(PanelController)
 final panelControllerProvider =
     NotifierProvider<PanelController, void>.internal(

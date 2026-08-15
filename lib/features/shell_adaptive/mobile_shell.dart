@@ -27,8 +27,8 @@ class _MobileShellState extends ConsumerState<MobileShell> {
     // In mobile, we might want to sync active panel with bottom nav
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref
-          .read(activePanelProvider.notifier)
-          .setActive(_currentIndex == 0 ? PanelSide.a : PanelSide.b);
+          .read(panelWorkspaceProvider.notifier)
+          .setActive(_currentIndex == 0 ? PanelId.a : PanelId.b);
     });
   }
 
@@ -36,8 +36,8 @@ class _MobileShellState extends ConsumerState<MobileShell> {
     setState(() {
       _currentIndex = index;
       ref
-          .read(activePanelProvider.notifier)
-          .setActive(index == 0 ? PanelSide.a : PanelSide.b);
+          .read(panelWorkspaceProvider.notifier)
+          .setActive(index == 0 ? PanelId.a : PanelId.b);
     });
   }
 
@@ -108,9 +108,9 @@ class _MobileShellState extends ConsumerState<MobileShell> {
           padding: getPlatformPadding(),
           child: Row(
             children: [
-              const Expanded(child: FilePanel(side: PanelSide.a)),
+              const Expanded(child: FilePanel(side: PanelId.a)),
               Container(width: 1, color: theme.dividerColor),
-              const Expanded(child: FilePanel(side: PanelSide.b)),
+              const Expanded(child: FilePanel(side: PanelId.b)),
             ],
           ),
         ),
@@ -118,7 +118,7 @@ class _MobileShellState extends ConsumerState<MobileShell> {
     }
 
     // Portrait or single pane landscape
-    final activeSide = _currentIndex == 0 ? PanelSide.a : PanelSide.b;
+    final activeSide = _currentIndex == 0 ? PanelId.a : PanelId.b;
 
     return Scaffold(
       appBar: AppBar(

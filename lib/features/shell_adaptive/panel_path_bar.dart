@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/generated/app_localizations.dart' as gen;
 import '../../core/theme/glass_container.dart';
-import '../../core/storage/storage_provider_service.dart';
 import '../bookmarks/bookmarks_menu.dart';
 import '../file_operations/file_operations_state.dart';
 import 'file_operations_actions.dart';
@@ -14,12 +13,9 @@ import 'panel_controller.dart';
 
 /// A hybrid breadcrumb and editable text field for navigating paths.
 class PanelPathBar extends ConsumerStatefulWidget {
-  const PanelPathBar({
-    required this.side,
-    super.key,
-  });
+  const PanelPathBar({required this.side, super.key});
 
-  final PanelSide side;
+  final PanelId side;
 
   @override
   ConsumerState<PanelPathBar> createState() => _PanelPathBarState();
@@ -55,9 +51,9 @@ class _PanelPathBarState extends ConsumerState<PanelPathBar> {
     super.dispose();
   }
 
-  PanelState get _state => widget.side == PanelSide.a
-      ? ref.watch(panelAProvider)
-      : ref.watch(panelBProvider);
+  PanelState get _state => ref.watch(panelStateProvider(widget.side));
+
+  PanelWorkspace get _panels => ref.read(panelWorkspaceProvider.notifier);
 
   void _navigateToAddress() {
     final path = _addressController.text.trim();
@@ -77,25 +73,27 @@ class _PanelPathBarState extends ConsumerState<PanelPathBar> {
     final theme = Theme.of(context);
 
     // If the controller reports an error (e.g. invalid path), keep the bar open with error state
-    if (state.activeTab.error != null && !_isEditing && _addressController.text.isNotEmpty) {
-       WidgetsBinding.instance.addPostFrameCallback((_) {
-         if (mounted) {
-           setState(() {
-             _isEditing = true;
-             _hasError = true;
-           });
-           _focusNode.requestFocus();
-         }
-       });
+    if (state.activeTab.error != null &&
+        !_isEditing &&
+        _addressController.text.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {
+            _isEditing = true;
+            _hasError = true;
+          });
+          _focusNode.requestFocus();
+        }
+      });
     } else if (state.activeTab.error == null && _hasError) {
       // Clear error state if no error
-       WidgetsBinding.instance.addPostFrameCallback((_) {
-         if (mounted) {
-           setState(() {
-             _hasError = false;
-           });
-         }
-       });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {
+            _hasError = false;
+          });
+        }
+      });
     }
 
     if (_isSearching) {
@@ -110,13 +108,9 @@ class _PanelPathBarState extends ConsumerState<PanelPathBar> {
                   _isSearching = false;
                   _searchController.clear();
                 });
-                
-                if (widget.side == PanelSide.a) {
-                  ref.read(panelAProvider.notifier).setSearchQuery(null);
-                } else {
-                  ref.read(panelBProvider.notifier).setSearchQuery(null);
-                }
-                
+
+                _panels.setSearchQuery(widget.side, null);
+
                 ref.read(panelControllerProvider.notifier).refresh(widget.side);
               },
               visualDensity: VisualDensity.compact,
@@ -129,12 +123,10 @@ class _PanelPathBarState extends ConsumerState<PanelPathBar> {
                       _isSearching = false;
                       _searchController.clear();
                     });
-                    if (widget.side == PanelSide.a) {
-                      ref.read(panelAProvider.notifier).setSearchQuery(null);
-                    } else {
-                      ref.read(panelBProvider.notifier).setSearchQuery(null);
-                    }
-                    ref.read(panelControllerProvider.notifier).refresh(widget.side);
+                    _panels.setSearchQuery(widget.side, null);
+                    ref
+                        .read(panelControllerProvider.notifier)
+                        .refresh(widget.side);
                   },
                 },
                 child: TextField(
@@ -144,7 +136,10 @@ class _PanelPathBarState extends ConsumerState<PanelPathBar> {
                   decoration: InputDecoration(
                     hintText: 'Search files...',
                     isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 8,
+                    ),
                     border: OutlineInputBorder(
                       borderSide: BorderSide(color: theme.colorScheme.primary),
                     ),
@@ -152,31 +147,36 @@ class _PanelPathBarState extends ConsumerState<PanelPathBar> {
                       borderSide: BorderSide(color: theme.dividerColor),
                     ),
                     focusedBorder: OutlineInputBorder(
-                      borderSide: BorderSide(color: theme.colorScheme.primary, width: 1.5),
+                      borderSide: BorderSide(
+                        color: theme.colorScheme.primary,
+                        width: 1.5,
+                      ),
                     ),
                     prefixIcon: const Icon(Icons.search, size: 16),
                   ),
                   onChanged: (val) {
                     if (_debounce?.isActive ?? false) _debounce!.cancel();
-                    
-                    if (widget.side == PanelSide.a) {
-                      ref.read(panelAProvider.notifier).setSearchQuery(val.isEmpty ? null : val);
-                    } else {
-                      ref.read(panelBProvider.notifier).setSearchQuery(val.isEmpty ? null : val);
-                    }
-                    
+
+                    _panels.setSearchQuery(
+                      widget.side,
+                      val.isEmpty ? null : val,
+                    );
+
                     _debounce = Timer(const Duration(milliseconds: 500), () {
-                      ref.read(panelControllerProvider.notifier).search(widget.side, val, recursive: true);
+                      ref
+                          .read(panelControllerProvider.notifier)
+                          .search(widget.side, val, recursive: true);
                     });
                   },
                   onSubmitted: (val) {
                     _debounce?.cancel();
-                    if (widget.side == PanelSide.a) {
-                      ref.read(panelAProvider.notifier).setSearchQuery(val.isEmpty ? null : val);
-                    } else {
-                      ref.read(panelBProvider.notifier).setSearchQuery(val.isEmpty ? null : val);
-                    }
-                    ref.read(panelControllerProvider.notifier).search(widget.side, val, recursive: true);
+                    _panels.setSearchQuery(
+                      widget.side,
+                      val.isEmpty ? null : val,
+                    );
+                    ref
+                        .read(panelControllerProvider.notifier)
+                        .search(widget.side, val, recursive: true);
                   },
                 ),
               ),
@@ -216,20 +216,29 @@ class _PanelPathBarState extends ConsumerState<PanelPathBar> {
                   style: theme.textTheme.bodySmall,
                   decoration: InputDecoration(
                     isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 8,
+                    ),
                     border: OutlineInputBorder(
                       borderSide: BorderSide(
-                        color: _hasError ? theme.colorScheme.error : theme.colorScheme.primary,
+                        color: _hasError
+                            ? theme.colorScheme.error
+                            : theme.colorScheme.primary,
                       ),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderSide: BorderSide(
-                        color: _hasError ? theme.colorScheme.error : theme.dividerColor,
+                        color: _hasError
+                            ? theme.colorScheme.error
+                            : theme.dividerColor,
                       ),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderSide: BorderSide(
-                        color: _hasError ? theme.colorScheme.error : theme.colorScheme.primary,
+                        color: _hasError
+                            ? theme.colorScheme.error
+                            : theme.colorScheme.primary,
                         width: 1.5,
                       ),
                     ),
@@ -252,7 +261,10 @@ class _PanelPathBarState extends ConsumerState<PanelPathBar> {
     // Windows paths use \ separator, Unix paths use /. Split by both.
     final isWindowsPath = Platform.isWindows && path.contains('\\');
     final separator = isWindowsPath ? '\\' : '/';
-    final segments = path.split(RegExp(r'[\\/]')).where((s) => s.isNotEmpty).toList();
+    final segments = path
+        .split(RegExp(r'[\\/]'))
+        .where((s) => s.isNotEmpty)
+        .toList();
 
     // Reconstruct a path up to segment index i (1-based)
     String buildPathUpTo(int segIndex) {
@@ -278,30 +290,46 @@ class _PanelPathBarState extends ConsumerState<PanelPathBar> {
             tooltip: 'Back',
             onPressed: state.activeTab.historyIndex > 0
                 ? () {
-                    ref.read(panelControllerProvider.notifier).navigateBack(widget.side);
+                    ref
+                        .read(panelControllerProvider.notifier)
+                        .navigateBack(widget.side);
                   }
                 : null,
             visualDensity: VisualDensity.compact,
-            color: state.activeTab.historyIndex > 0 ? null : theme.disabledColor,
+            color: state.activeTab.historyIndex > 0
+                ? null
+                : theme.disabledColor,
           ),
           // Forward button
           IconButton(
             icon: const Icon(Icons.arrow_forward, size: 18),
             tooltip: 'Forward',
-            onPressed: state.activeTab.historyIndex >= 0 && state.activeTab.historyIndex < state.activeTab.history.length - 1
+            onPressed:
+                state.activeTab.historyIndex >= 0 &&
+                    state.activeTab.historyIndex <
+                        state.activeTab.history.length - 1
                 ? () {
-                    ref.read(panelControllerProvider.notifier).navigateForward(widget.side);
+                    ref
+                        .read(panelControllerProvider.notifier)
+                        .navigateForward(widget.side);
                   }
                 : null,
             visualDensity: VisualDensity.compact,
-            color: state.activeTab.historyIndex >= 0 && state.activeTab.historyIndex < state.activeTab.history.length - 1 ? null : theme.disabledColor,
+            color:
+                state.activeTab.historyIndex >= 0 &&
+                    state.activeTab.historyIndex <
+                        state.activeTab.history.length - 1
+                ? null
+                : theme.disabledColor,
           ),
           // Up button
           IconButton(
             icon: const Icon(Icons.arrow_upward, size: 18),
             tooltip: 'Up',
             onPressed: () {
-              ref.read(panelControllerProvider.notifier).navigateUp(widget.side);
+              ref
+                  .read(panelControllerProvider.notifier)
+                  .navigateUp(widget.side);
             },
             visualDensity: VisualDensity.compact,
           ),
@@ -321,22 +349,40 @@ class _PanelPathBarState extends ConsumerState<PanelPathBar> {
                     children: [
                       InkWell(
                         onTap: () {
-                          ref.read(panelControllerProvider.notifier).navigateHome(widget.side);
+                          ref
+                              .read(panelControllerProvider.notifier)
+                              .navigateHome(widget.side);
                         },
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                          child: Icon(Icons.home, size: 16, color: theme.colorScheme.onSurfaceVariant),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 4,
+                          ),
+                          child: Icon(
+                            Icons.home,
+                            size: 16,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ),
                       for (var i = 0; i < segments.length; i++) ...[
-                        Icon(Icons.chevron_right, size: 16, color: theme.colorScheme.onSurfaceVariant),
+                        Icon(
+                          Icons.chevron_right,
+                          size: 16,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
                         InkWell(
                           onTap: () {
                             final targetPath = buildPathUpTo(i);
-                            ref.read(panelControllerProvider.notifier).navigate(widget.side, targetPath);
+                            ref
+                                .read(panelControllerProvider.notifier)
+                                .navigate(widget.side, targetPath);
                           },
                           child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 4,
+                            ),
                             child: Text(
                               segments[i],
                               style: theme.textTheme.bodySmall?.copyWith(
@@ -361,7 +407,9 @@ class _PanelPathBarState extends ConsumerState<PanelPathBar> {
             icon: const Icon(Icons.sync, size: 18),
             tooltip: 'Synchronize to other panel',
             onPressed: () {
-              ref.read(fileOperationsActionsProvider.notifier).syncPanels(context, widget.side);
+              ref
+                  .read(fileOperationsActionsProvider.notifier)
+                  .syncPanels(context, widget.side);
             },
             visualDensity: VisualDensity.compact,
           ),
@@ -389,16 +437,16 @@ class _PanelPathBarState extends ConsumerState<PanelPathBar> {
           // Hidden files toggle
           IconButton(
             icon: Icon(
-              state.activeTab.showHidden ? Icons.visibility : Icons.visibility_off,
+              state.activeTab.showHidden
+                  ? Icons.visibility
+                  : Icons.visibility_off,
               size: 18,
             ),
-            tooltip: 'Show hidden files',
+            tooltip: state.activeTab.showHidden
+                ? 'Gizli dosyaları gizle'
+                : 'Gizli dosyaları göster',
             onPressed: () {
-              if (widget.side == PanelSide.a) {
-                ref.read(panelAProvider.notifier).toggleHidden();
-              } else {
-                ref.read(panelBProvider.notifier).toggleHidden();
-              }
+              _panels.toggleHidden(widget.side);
             },
             visualDensity: VisualDensity.compact,
           ),

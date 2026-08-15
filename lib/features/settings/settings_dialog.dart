@@ -3,10 +3,15 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../core/settings/settings_provider.dart';
 import '../../core/theme/app_theme.dart';
 import '../../l10n/generated/app_localizations.dart';
+
+final packageInfoProvider = FutureProvider<PackageInfo>(
+  (ref) => PackageInfo.fromPlatform(),
+);
 
 class SettingsDialog extends ConsumerWidget {
   const SettingsDialog({super.key});
@@ -16,6 +21,7 @@ class SettingsDialog extends ConsumerWidget {
     final settings = ref.watch(settingsProvider);
     final l10n = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
+    final packageInfo = ref.watch(packageInfoProvider);
 
     return AlertDialog(
       title: const Text('Ayarlar'),
@@ -58,8 +64,14 @@ class SettingsDialog extends ConsumerWidget {
                   },
                   items: const [
                     DropdownMenuItem(value: null, child: Text('Sistem')),
-                    DropdownMenuItem(value: Locale('en'), child: Text('English')),
-                    DropdownMenuItem(value: Locale('tr'), child: Text('Türkçe')),
+                    DropdownMenuItem(
+                      value: Locale('en'),
+                      child: Text('English'),
+                    ),
+                    DropdownMenuItem(
+                      value: Locale('tr'),
+                      child: Text('Türkçe'),
+                    ),
                   ],
                 ),
               ),
@@ -80,11 +92,15 @@ class SettingsDialog extends ConsumerWidget {
               // ── Animasyon Sesleri ───────────────────────────────────────
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Animasyon Sesleri'),
-                subtitle: const Text('Dosya kopyalama/silme gibi işlemlerdeki ses efektlerini aç veya kapat.'),
+                title: const Text('İşlem tamamlanma sesi'),
+                subtitle: const Text(
+                  'Kopyalama, taşıma veya senkron tamamen bittiğinde bir kez çalar.',
+                ),
                 value: settings.playAnimationSounds,
                 onChanged: (val) {
-                  ref.read(settingsProvider.notifier).setPlayAnimationSounds(val);
+                  ref
+                      .read(settingsProvider.notifier)
+                      .setPlayAnimationSounds(val);
                 },
               ),
               const Divider(),
@@ -156,10 +172,7 @@ class SettingsDialog extends ConsumerWidget {
                 children: [
                   SizedBox(
                     width: 80,
-                    child: Text(
-                      'Şeffaflık',
-                      style: theme.textTheme.bodyMedium,
-                    ),
+                    child: Text('Şeffaflık', style: theme.textTheme.bodyMedium),
                   ),
                   Expanded(
                     child: Slider(
@@ -184,6 +197,24 @@ class SettingsDialog extends ConsumerWidget {
                     ),
                   ),
                 ],
+              ),
+              const Divider(),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.info_outline),
+                title: const Text('Sürüm'),
+                trailing: packageInfo.when(
+                  data: (info) => Text(
+                    info.buildNumber.isEmpty
+                        ? info.version
+                        : '${info.version} (${info.buildNumber})',
+                  ),
+                  loading: () => const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  error: (error, stackTrace) => const Text('Bilgi alınamadı'),
+                ),
               ),
             ],
           ),
@@ -234,8 +265,9 @@ class _WallpaperPreview extends StatelessWidget {
           Container(
             width: double.infinity,
             height: 120,
-            color: (isDark ? Colors.black : Colors.white)
-                .withValues(alpha: opacity),
+            color: (isDark ? Colors.black : Colors.white).withValues(
+              alpha: opacity,
+            ),
           ),
         ],
       ),
@@ -253,10 +285,7 @@ class _EmptyWallpaperPlaceholder extends StatelessWidget {
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: theme.colorScheme.outlineVariant,
-          width: 1,
-        ),
+        border: Border.all(color: theme.colorScheme.outlineVariant, width: 1),
       ),
       child: Center(
         child: Column(

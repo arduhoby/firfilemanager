@@ -6,7 +6,7 @@ part of 'sync_scheduler.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$syncSchedulerHash() => r'ef0df1e60a93397f13bed9e87a18a44b061f9392';
+String _$syncSchedulerHash() => r'd78fa7c8107ddc2aac04f1bd6c197a62423aafd0';
 
 /// See also [SyncScheduler].
 @ProviderFor(SyncScheduler)

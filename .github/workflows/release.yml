@@ -60,6 +60,9 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Verify UTF-8 source files
+        run: flutter test test/quality/utf8_source_guard_test.dart
+
       - name: Build Application
         run: ${{ matrix.build-cmd }}
 

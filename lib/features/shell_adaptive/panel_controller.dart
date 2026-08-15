@@ -3,53 +3,49 @@ import 'dart:io';
 
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../core/settings/recent_service.dart';
 import '../../core/storage/storage_provider.dart';
 import '../../core/storage/storage_provider_service.dart';
-import '../../core/settings/recent_service.dart';
 import '../file_operations/file_operations_state.dart';
 
 part 'panel_controller.g.dart';
 
-/// Controller that loads directory listings for panels.
-///
-/// Watches the panel's current path and loads entries from the
-/// appropriate [StorageProvider] whenever the path changes.
 @Riverpod(keepAlive: true)
 class PanelController extends _$PanelController {
-  StreamSubscription<FileSystemEvent>? _watchSubscriptionA;
-  StreamSubscription<FileSystemEvent>? _watchSubscriptionB;
+  final Map<PanelId, StreamSubscription<FileSystemEvent>> _watchers = {};
+
   @override
   void build() {
-    // Listen to both panels and auto-load when path or provider changes
-    ref.listen(panelAProvider, (previous, next) {
-      if (previous?.activeTab.currentPath != next.activeTab.currentPath ||
-          previous?.activeTab.providerId != next.activeTab.providerId) {
-        _loadDirectory(
-          PanelSide.a,
-          next.activeTab.currentPath,
-          next.activeTab.showHidden,
-        );
+    ref.onDispose(() {
+      for (final subscription in _watchers.values) {
+        subscription.cancel();
       }
+      _watchers.clear();
     });
 
-    ref.listen(panelBProvider, (previous, next) {
-      if (previous?.activeTab.currentPath != next.activeTab.currentPath ||
-          previous?.activeTab.providerId != next.activeTab.providerId) {
-        _loadDirectory(
-          PanelSide.b,
-          next.activeTab.currentPath,
-          next.activeTab.showHidden,
-        );
+    ref.listen(panelWorkspaceProvider, (previous, next) {
+      for (final removedId
+          in _watchers.keys
+              .where((panelId) => !next.panels.containsKey(panelId))
+              .toList()) {
+        _cancelWatcher(removedId);
+      }
+
+      for (final panelId in next.panelOrder) {
+        final panel = next.panel(panelId).activeTab;
+        final previousPanel = previous?.panels[panelId]?.activeTab;
+        if (previousPanel == null ||
+            previousPanel.currentPath != panel.currentPath ||
+            previousPanel.providerId != panel.providerId ||
+            previousPanel.showHidden != panel.showHidden) {
+          _loadDirectory(panelId, panel.currentPath, panel.showHidden);
+        }
       }
     });
   }
 
-  /// Get the appropriate provider for a panel side.
-  StorageProvider _getProviderForPath(PanelSide side, String path) {
-    final panelState = side == PanelSide.a
-        ? ref.read(panelAProvider)
-        : ref.read(panelBProvider);
-
+  StorageProvider _getProviderForPath(PanelId panelId, String path) {
+    final panelState = ref.read(panelWorkspaceProvider).panel(panelId);
     if (panelState.activeTab.providerId == 'local') {
       return ref.read(localStorageProviderProvider);
     }
@@ -64,21 +60,18 @@ class PanelController extends _$PanelController {
   }
 
   Future<void> _loadDirectory(
-    PanelSide side,
+    PanelId panelId,
     String path,
     bool showHidden,
   ) async {
-    print(
-      'PANEL_CONTROLLER: _loadDirectory started for side=$side, path="$path"',
-    );
-    if (side == PanelSide.a) {
-      ref.read(panelAProvider.notifier).setLoading(true);
-    } else {
-      ref.read(panelBProvider.notifier).setLoading(true);
-    }
+    final workspace = ref.read(panelWorkspaceProvider);
+    if (!workspace.panels.containsKey(panelId)) return;
+
+    final panels = ref.read(panelWorkspaceProvider.notifier);
+    panels.setLoading(panelId, true);
 
     try {
-      final provider = _getProviderForPath(side, path);
+      final provider = _getProviderForPath(panelId, path);
       final entries = await provider
           .list(path, ListOptions(showHidden: showHidden))
           .timeout(
@@ -89,235 +82,154 @@ class PanelController extends _$PanelController {
               path: path,
             ),
           );
-      print(
-        'PANEL_CONTROLLER: _loadDirectory loaded ${entries.length} entries for side=$side',
-      );
-      if (side == PanelSide.a) {
-        ref.read(panelAProvider.notifier).setEntries(entries);
-      } else {
-        ref.read(panelBProvider.notifier).setEntries(entries);
-      }
 
-      // Add to recent folders if it's local
+      if (!ref.read(panelWorkspaceProvider).panels.containsKey(panelId)) return;
+      panels.setEntries(panelId, entries);
+
       final home = Platform.environment['HOME'];
       if (provider.displayName == 'Local' &&
           (home == null || !path.startsWith('$home/Library/'))) {
         ref.read(recentServiceProvider.notifier).addRecentFolder(path);
       }
 
-      // Setup file watcher for local directories to auto-refresh on external changes
       if (provider.displayName == 'Local') {
-        _setupWatcher(side, path, showHidden);
+        _setupWatcher(panelId, path);
       } else {
-        _cancelWatcher(side);
+        _cancelWatcher(panelId);
       }
-    } catch (e, stack) {
-      print(
-        'PANEL_CONTROLLER: _loadDirectory failed for side=$side. Error: $e\n$stack',
-      );
-      if (side == PanelSide.a) {
-        ref.read(panelAProvider.notifier).setError(e.toString());
-      } else {
-        ref.read(panelBProvider.notifier).setError(e.toString());
+    } catch (error) {
+      if (ref.read(panelWorkspaceProvider).panels.containsKey(panelId)) {
+        panels.setError(panelId, error.toString());
       }
     }
   }
 
-  void _cancelWatcher(PanelSide side) {
-    if (side == PanelSide.a) {
-      _watchSubscriptionA?.cancel();
-      _watchSubscriptionA = null;
-    } else {
-      _watchSubscriptionB?.cancel();
-      _watchSubscriptionB = null;
-    }
+  void _cancelWatcher(PanelId panelId) {
+    _watchers.remove(panelId)?.cancel();
   }
 
-  void _setupWatcher(PanelSide side, String path, bool showHidden) {
-    _cancelWatcher(side);
+  void _setupWatcher(PanelId panelId, String path) {
+    _cancelWatcher(panelId);
     try {
-      final dir = Directory(path);
-      if (!dir.existsSync()) return;
-      // Drive roots on Windows (e.g. 'C:\') cannot be watched reliably
-      if (Platform.isWindows && RegExp(r'^[a-zA-Z]:\\?$').hasMatch(path))
+      final directory = Directory(path);
+      if (!directory.existsSync()) return;
+      if (Platform.isWindows && RegExp(r'^[a-zA-Z]:\\?$').hasMatch(path)) {
         return;
-      final sub = dir
+      }
+
+      _watchers[panelId] = directory
           .watch(events: FileSystemEvent.all, recursive: false)
-          .listen((event) {
-            // Add a small delay to debounce multiple rapid events
+          .listen((_) {
             Future.delayed(const Duration(milliseconds: 100), () {
-              if (side == PanelSide.a) {
-                final activePath = ref
-                    .read(panelAProvider)
-                    .activeTab
-                    .currentPath;
-                if (activePath == path) refresh(side);
-              } else {
-                final activePath = ref
-                    .read(panelBProvider)
-                    .activeTab
-                    .currentPath;
-                if (activePath == path) refresh(side);
+              final panel = ref.read(panelWorkspaceProvider).panels[panelId];
+              if (panel?.activeTab.currentPath == path) {
+                refresh(panelId);
               }
             });
           });
-      if (side == PanelSide.a) {
-        _watchSubscriptionA = sub;
-      } else {
-        _watchSubscriptionB = sub;
-      }
-    } catch (e) {
-      print('PANEL_CONTROLLER: Failed to setup watcher for $path: $e');
+    } catch (_) {
+      // File watching is an optional convenience. Directory loading remains
+      // authoritative when a platform or mount cannot be watched.
     }
   }
 
-  /// Navigate a panel to a new path
   Future<void> navigate(
-    PanelSide side,
+    PanelId panelId,
     String path, {
     String? providerId,
   }) async {
-    String? resolvedProviderId = providerId;
-
-    // Auto-detect local paths if providerId is not specified
+    var resolvedProviderId = providerId;
     if (resolvedProviderId == null) {
-      bool isLocal = false;
-      if (Platform.isWindows) {
-        // Only treat Windows drive paths (e.g. C:\, D:\) as local
-        isLocal = RegExp(r'^[a-zA-Z]:[/\\]').hasMatch(path);
-      } else {
-        isLocal =
-            path.startsWith('/Users/') ||
-            path.startsWith('/home/') ||
-            path.startsWith('/tmp/') ||
-            path.startsWith('/storage/') ||
-            path.startsWith('/sdcard') ||
-            Directory(path).existsSync();
-      }
-      if (isLocal) {
-        resolvedProviderId = 'local';
-      }
+      final isLocal = Platform.isWindows
+          ? RegExp(r'^[a-zA-Z]:[/\\]').hasMatch(path)
+          : path.startsWith('/Users/') ||
+                path.startsWith('/home/') ||
+                path.startsWith('/tmp/') ||
+                path.startsWith('/storage/') ||
+                path.startsWith('/sdcard') ||
+                Directory(path).existsSync();
+      if (isLocal) resolvedProviderId = 'local';
     }
 
-    if (side == PanelSide.a) {
-      if (resolvedProviderId != null) {
-        ref
-            .read(panelAProvider.notifier)
-            .setProviderAndPath(resolvedProviderId, path);
-      } else {
-        ref.read(panelAProvider.notifier).setPath(path);
-      }
+    final panels = ref.read(panelWorkspaceProvider.notifier);
+    if (resolvedProviderId != null) {
+      panels.setProviderAndPath(panelId, resolvedProviderId, path);
     } else {
-      if (resolvedProviderId != null) {
-        ref
-            .read(panelBProvider.notifier)
-            .setProviderAndPath(resolvedProviderId, path);
-      } else {
-        ref.read(panelBProvider.notifier).setPath(path);
-      }
+      panels.setPath(panelId, path);
     }
   }
 
-  /// Navigate up one level
-  Future<void> navigateUp(PanelSide side) async {
-    final panelState = side == PanelSide.a
-        ? ref.read(panelAProvider)
-        : ref.read(panelBProvider);
-
+  Future<void> navigateUp(PanelId panelId) async {
+    final panelState = ref.read(panelWorkspaceProvider).panel(panelId);
     final currentPath = panelState.activeTab.currentPath;
-    final provider = _getProviderForPath(side, currentPath);
+    final provider = _getProviderForPath(panelId, currentPath);
     final parent = provider.dirname(currentPath);
-
-    // Don't navigate if we're already at the root (dirname returns same path)
     if (parent == currentPath) return;
-
-    // On Windows, if at drive root like 'C:\', dirname returns 'C:\' again — guard against that
-    if (Platform.isWindows) {
-      final normalized = currentPath.replaceAll('/', '\\');
-      if (RegExp(r'^[a-zA-Z]:\\?$').hasMatch(normalized)) return;
+    if (Platform.isWindows &&
+        RegExp(r'^[a-zA-Z]:\\?$').hasMatch(currentPath.replaceAll('/', '\\'))) {
+      return;
     }
-
-    await navigate(side, parent);
+    await navigate(panelId, parent);
   }
 
-  /// Navigate back in history
-  Future<void> navigateBack(PanelSide side) async {
-    if (side == PanelSide.a) {
-      ref.read(panelAProvider.notifier).goBack();
-    } else {
-      ref.read(panelBProvider.notifier).goBack();
-    }
+  Future<void> navigateBack(PanelId panelId) async {
+    ref.read(panelWorkspaceProvider.notifier).goBack(panelId);
   }
 
-  /// Navigate to home path of current provider
-  Future<void> navigateHome(PanelSide side) async {
-    final panelState = side == PanelSide.a
-        ? ref.read(panelAProvider)
-        : ref.read(panelBProvider);
-
+  Future<void> navigateHome(PanelId panelId) async {
+    final panelState = ref.read(panelWorkspaceProvider).panel(panelId);
     try {
       final provider = _getProviderForPath(
-        side,
+        panelId,
         panelState.activeTab.currentPath,
       );
       final home = await provider.homePath;
-      await navigate(side, home, providerId: panelState.activeTab.providerId);
-    } catch (e) {
-      // Fallback to local home
+      await navigate(
+        panelId,
+        home,
+        providerId: panelState.activeTab.providerId,
+      );
+    } catch (_) {
       try {
         final localProvider = ref.read(localStorageProviderProvider);
-        final home = await localProvider.homePath;
-        await navigate(side, home, providerId: 'local');
+        await navigate(
+          panelId,
+          await localProvider.homePath,
+          providerId: 'local',
+        );
       } catch (_) {}
     }
   }
 
-  /// Navigate forward in history
-  Future<void> navigateForward(PanelSide side) async {
-    if (side == PanelSide.a) {
-      ref.read(panelAProvider.notifier).goForward();
-    } else {
-      ref.read(panelBProvider.notifier).goForward();
-    }
+  Future<void> navigateForward(PanelId panelId) async {
+    ref.read(panelWorkspaceProvider.notifier).goForward(panelId);
   }
 
-  /// Refresh the current directory
-  Future<void> refresh(PanelSide side) async {
-    final panelState = side == PanelSide.a
-        ? ref.read(panelAProvider)
-        : ref.read(panelBProvider);
-
+  Future<void> refresh(PanelId panelId) async {
+    final panelState = ref.read(panelWorkspaceProvider).panel(panelId);
     await _loadDirectory(
-      side,
+      panelId,
       panelState.activeTab.currentPath,
       panelState.activeTab.showHidden,
     );
   }
 
-  /// Search inside the current directory
   Future<void> search(
-    PanelSide side,
+    PanelId panelId,
     String query, {
     bool recursive = false,
   }) async {
-    final panelState = side == PanelSide.a
-        ? ref.read(panelAProvider)
-        : ref.read(panelBProvider);
-
+    final panelState = ref.read(panelWorkspaceProvider).panel(panelId);
     if (query.trim().isEmpty) {
-      await refresh(side);
+      await refresh(panelId);
       return;
     }
 
-    if (side == PanelSide.a) {
-      ref.read(panelAProvider.notifier).setLoading(true);
-    } else {
-      ref.read(panelBProvider.notifier).setLoading(true);
-    }
-
+    final panels = ref.read(panelWorkspaceProvider.notifier);
+    panels.setLoading(panelId, true);
     try {
       final provider = _getProviderForPath(
-        side,
+        panelId,
         panelState.activeTab.currentPath,
       );
       final results = await provider.search(
@@ -325,34 +237,20 @@ class PanelController extends _$PanelController {
         query,
         recursive: recursive,
       );
-
-      if (side == PanelSide.a) {
-        ref.read(panelAProvider.notifier).setEntries(results);
-      } else {
-        ref.read(panelBProvider.notifier).setEntries(results);
-      }
-    } catch (e) {
-      if (side == PanelSide.a) {
-        ref.read(panelAProvider.notifier).setError(e.toString());
-      } else {
-        ref.read(panelBProvider.notifier).setError(e.toString());
-      }
+      panels.setEntries(panelId, results);
+    } catch (error) {
+      panels.setError(panelId, error.toString());
     }
   }
 
-  /// Initialize panels with home path
   Future<void> initialize() async {
-    print('PANEL_CONTROLLER: initialize() started');
     try {
       final provider = ref.read(localStorageProviderProvider);
       final home = await provider.homePath;
-      print('PANEL_CONTROLLER: initialize() resolved homePath="$home"');
-
-      ref.read(panelAProvider.notifier).setPath(home);
-      ref.read(panelBProvider.notifier).setPath(home);
-      print('PANEL_CONTROLLER: initialize() completed successfully');
-    } catch (e, stack) {
-      print('PANEL_CONTROLLER: initialize() failed with error: $e\n$stack');
-    }
+      final panels = ref.read(panelWorkspaceProvider.notifier);
+      for (final panelId in ref.read(panelWorkspaceProvider).panelOrder) {
+        panels.setPath(panelId, home);
+      }
+    } catch (_) {}
   }
 }

@@ -18,8 +18,8 @@ import '../../widgets/cascade_menu/cascade_menu.dart';
 /// A bar showing available local drives/mounts and active cloud/network connections.
 class PanelDriveBar extends ConsumerStatefulWidget {
   const PanelDriveBar({required this.side, super.key});
-  
-  final PanelSide side;
+
+  final PanelId side;
 
   @override
   ConsumerState<PanelDriveBar> createState() => _PanelDriveBarState();
@@ -47,19 +47,21 @@ class _PanelDriveBarState extends ConsumerState<PanelDriveBar> {
 
   Future<void> _loadLocalDrives() async {
     final drives = <_DriveItem>[];
-    
+
     // Default home directory
     final localProvider = ref.read(localStorageProviderProvider);
     final homePath = await localProvider.homePath;
-    
-    drives.add(_DriveItem(
-      id: 'local',
-      path: homePath,
-      name: 'Home',
-      icon: Icons.home_filled,
-      isLocal: true,
-    ));
-    
+
+    drives.add(
+      _DriveItem(
+        id: 'local',
+        path: homePath,
+        name: 'Home',
+        icon: Icons.home_filled,
+        isLocal: true,
+      ),
+    );
+
     // Platform specific mounts
     try {
       if (Platform.isMacOS) {
@@ -67,24 +69,25 @@ class _PanelDriveBarState extends ConsumerState<PanelDriveBar> {
         if (volumes.existsSync()) {
           for (final entity in volumes.listSync().whereType<Directory>()) {
             final name = entity.path.split('/').last;
-            // Akıllı filtre: gizli veya virtual driveları gizle
-            if (!name.startsWith('.') && 
-                !name.startsWith('com.apple.') && 
-                name != 'Recovery' && 
-                name != 'VM' && 
+            // Akıllı filtre: gizli veya sanal sürücüleri gizle.
+            if (!name.startsWith('.') &&
+                !name.startsWith('com.apple.') &&
+                name != 'Recovery' &&
+                name != 'VM' &&
                 name != 'Preboot' &&
                 name != 'Update') {
-              
               String displayName = name;
               if (name == 'Macintosh HD') displayName = 'AnaDisk';
-              
-              drives.add(_DriveItem(
-                id: 'local',
-                path: entity.path,
-                name: displayName,
-                icon: Icons.storage,
-                isLocal: true,
-              ));
+
+              drives.add(
+                _DriveItem(
+                  id: 'local',
+                  path: entity.path,
+                  name: displayName,
+                  icon: Icons.storage,
+                  isLocal: true,
+                ),
+              );
             }
           }
         }
@@ -93,48 +96,57 @@ class _PanelDriveBarState extends ConsumerState<PanelDriveBar> {
           final dir = Directory(baseDir);
           if (dir.existsSync()) {
             for (final userDir in dir.listSync().whereType<Directory>()) {
-               if (baseDir == '/media') {
-                 for (final mount in userDir.listSync().whereType<Directory>()) {
-                   drives.add(_DriveItem(
-                     id: 'local',
-                     path: mount.path,
-                     name: mount.path.split('/').last,
-                     icon: Icons.storage,
-                     isLocal: true,
-                   ));
-                 }
-               } else {
-                 drives.add(_DriveItem(
-                   id: 'local',
-                   path: userDir.path,
-                   name: userDir.path.split('/').last,
-                   icon: Icons.storage,
-                   isLocal: true,
-                 ));
-               }
+              if (baseDir == '/media') {
+                for (final mount in userDir.listSync().whereType<Directory>()) {
+                  drives.add(
+                    _DriveItem(
+                      id: 'local',
+                      path: mount.path,
+                      name: mount.path.split('/').last,
+                      icon: Icons.storage,
+                      isLocal: true,
+                    ),
+                  );
+                }
+              } else {
+                drives.add(
+                  _DriveItem(
+                    id: 'local',
+                    path: userDir.path,
+                    name: userDir.path.split('/').last,
+                    icon: Icons.storage,
+                    isLocal: true,
+                  ),
+                );
+              }
             }
           }
         }
         // Root
-        drives.add(const _DriveItem(
-          id: 'local',
-          path: '/',
-          name: 'Root',
-          icon: Icons.computer,
-          isLocal: true,
-        ));
+        drives.add(
+          const _DriveItem(
+            id: 'local',
+            path: '/',
+            name: 'Root',
+            icon: Icons.computer,
+            isLocal: true,
+          ),
+        );
       } else if (Platform.isWindows) {
-        for (var i = 67; i <= 90; i++) { // C to Z
+        for (var i = 67; i <= 90; i++) {
+          // C to Z
           final letter = String.fromCharCode(i);
           final path = '$letter:\\';
           if (Directory(path).existsSync()) {
-            drives.add(_DriveItem(
-              id: 'local',
-              path: path,
-              name: '$letter:',
-              icon: Icons.storage,
-              isLocal: true,
-            ));
+            drives.add(
+              _DriveItem(
+                id: 'local',
+                path: path,
+                name: '$letter:',
+                icon: Icons.storage,
+                isLocal: true,
+              ),
+            );
           }
         }
       }
@@ -159,10 +171,8 @@ class _PanelDriveBarState extends ConsumerState<PanelDriveBar> {
     final theme = Theme.of(context);
     final registry = ref.watch(storageProviderRegistryProvider);
     final connections = ref.watch(connectionRepositoryProvider);
-    final activeState = widget.side == PanelSide.a
-        ? ref.watch(panelAProvider)
-        : ref.watch(panelBProvider);
-    
+    final activeState = ref.watch(panelStateProvider(widget.side));
+
     final currentProviderId = activeState.activeTab.providerId;
     final currentPath = activeState.activeTab.currentPath;
 
@@ -172,14 +182,18 @@ class _PanelDriveBarState extends ConsumerState<PanelDriveBar> {
     for (final profile in connections) {
       final provider = registry[profile.id];
       final isConn = provider != null && provider.isConnected;
-      allItems.add(_DriveItem(
-        id: profile.id,
-        path: '/',
-        name: profile.name,
-        icon: _getIconForType(profile.type),
-        color: isConn ? _getColorForType(profile.type, theme) : theme.disabledColor,
-        isLocal: false,
-      ));
+      allItems.add(
+        _DriveItem(
+          id: profile.id,
+          path: '/',
+          name: profile.name,
+          icon: _getIconForType(profile.type),
+          color: isConn
+              ? _getColorForType(profile.type, theme)
+              : theme.disabledColor,
+          isLocal: false,
+        ),
+      );
     }
 
     return Container(
@@ -199,109 +213,138 @@ class _PanelDriveBarState extends ConsumerState<PanelDriveBar> {
               itemCount: allItems.length,
               itemBuilder: (context, index) {
                 final item = allItems[index];
-          // Check if active
-          final isSelected = item.id == currentProviderId && 
-             (item.isLocal ? currentPath.startsWith(item.path) : true);
-          
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 1.5),
-            child: Material(
-              color: isSelected ? theme.colorScheme.primaryContainer.withValues(alpha: 0.4) : Colors.transparent,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(5),
-                side: BorderSide(
-                  color: isSelected ? theme.colorScheme.primary : Colors.transparent,
-                  width: 1.5,
-                ),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                onTap: () async {
-                  if (item.isLocal) {
-                    ref.read(panelControllerProvider.notifier).navigate(
-                      widget.side,
-                      item.path,
-                      providerId: 'local',
-                    );
-                  } else {
-                    try {
-                      final profile = connections.firstWhere((p) => p.id == item.id);
-                      final repo = ref.read(connectionRepositoryProvider.notifier);
-                      final password = await repo.getPassword(profile.id);
-                      final privateKey = await repo.getPrivateKey(profile.id);
-                      final clientId = await repo.getClientId(profile.id);
-                      final clientSecret = await repo.getClientSecret(profile.id);
-                      
-                      final provider = await ref.read(storageProviderRegistryProvider.notifier).getOrCreate(
-                        profile,
-                        password: password,
-                        privateKey: privateKey,
-                        clientId: clientId,
-                        clientSecret: clientSecret,
-                      );
-                      final homePath = await provider.homePath;
-                      ref.read(panelControllerProvider.notifier).navigate(
-                        widget.side,
-                        homePath,
-                        providerId: item.id,
-                      );
-                    } catch (e) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Bağlantı hatası: $e')),
-                        );
-                      }
-                    }
-                  }
-                },
-                onLongPress: !item.isLocal
-                    ? () {
-                        final RenderBox box = context.findRenderObject() as RenderBox;
-                        final offset = box.localToGlobal(Offset.zero);
-                        _showDriveContextMenu(context, offset, item);
-                      }
-                    : null,
-                onSecondaryTapDown: !item.isLocal
-                    ? (details) {
-                        _showDriveContextMenu(context, details.globalPosition, item);
-                      }
-                    : null,
-                child: Container(
-                  width: 44, // reduced from 56 to take up less width
-                  padding: const EdgeInsets.symmetric(vertical: 1),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        item.icon,
-                        size: 15, // reduced from 20 for a slimmer profile
-                        color: isSelected 
-                           ? theme.colorScheme.onPrimaryContainer
-                           : (item.color ?? theme.colorScheme.onSurfaceVariant),
+                // Check if active
+                final isSelected =
+                    item.id == currentProviderId &&
+                    (item.isLocal ? currentPath.startsWith(item.path) : true);
+
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 1.5),
+                  child: Material(
+                    color: isSelected
+                        ? theme.colorScheme.primaryContainer.withValues(
+                            alpha: 0.4,
+                          )
+                        : Colors.transparent,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(5),
+                      side: BorderSide(
+                        color: isSelected
+                            ? theme.colorScheme.primary
+                            : Colors.transparent,
+                        width: 1.5,
                       ),
-                      const SizedBox(height: 1),
-                      Text(
-                        _formatName(item.name),
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: isSelected 
-                             ? theme.colorScheme.onPrimaryContainer
-                             : theme.colorScheme.onSurfaceVariant,
-                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                          fontSize: 8.5,
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: InkWell(
+                      onTap: () async {
+                        if (item.isLocal) {
+                          ref
+                              .read(panelControllerProvider.notifier)
+                              .navigate(
+                                widget.side,
+                                item.path,
+                                providerId: 'local',
+                              );
+                        } else {
+                          try {
+                            final profile = connections.firstWhere(
+                              (p) => p.id == item.id,
+                            );
+                            final repo = ref.read(
+                              connectionRepositoryProvider.notifier,
+                            );
+                            final password = await repo.getPassword(profile.id);
+                            final privateKey = await repo.getPrivateKey(
+                              profile.id,
+                            );
+                            final clientId = await repo.getClientId(profile.id);
+                            final clientSecret = await repo.getClientSecret(
+                              profile.id,
+                            );
+
+                            final provider = await ref
+                                .read(storageProviderRegistryProvider.notifier)
+                                .getOrCreate(
+                                  profile,
+                                  password: password,
+                                  privateKey: privateKey,
+                                  clientId: clientId,
+                                  clientSecret: clientSecret,
+                                );
+                            final homePath = await provider.homePath;
+                            ref
+                                .read(panelControllerProvider.notifier)
+                                .navigate(
+                                  widget.side,
+                                  homePath,
+                                  providerId: item.id,
+                                );
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Bağlantı hatası: $e')),
+                              );
+                            }
+                          }
+                        }
+                      },
+                      onLongPress: !item.isLocal
+                          ? () {
+                              final RenderBox box =
+                                  context.findRenderObject() as RenderBox;
+                              final offset = box.localToGlobal(Offset.zero);
+                              _showDriveContextMenu(context, offset, item);
+                            }
+                          : null,
+                      onSecondaryTapDown: !item.isLocal
+                          ? (details) {
+                              _showDriveContextMenu(
+                                context,
+                                details.globalPosition,
+                                item,
+                              );
+                            }
+                          : null,
+                      child: Container(
+                        width: 44, // reduced from 56 to take up less width
+                        padding: const EdgeInsets.symmetric(vertical: 1),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              item.icon,
+                              size: 15, // reduced from 20 for a slimmer profile
+                              color: isSelected
+                                  ? theme.colorScheme.onPrimaryContainer
+                                  : (item.color ??
+                                        theme.colorScheme.onSurfaceVariant),
+                            ),
+                            const SizedBox(height: 1),
+                            Text(
+                              _formatName(item.name),
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: isSelected
+                                    ? theme.colorScheme.onPrimaryContainer
+                                    : theme.colorScheme.onSurfaceVariant,
+                                fontWeight: isSelected
+                                    ? FontWeight.w600
+                                    : FontWeight.normal,
+                                fontSize: 8.5,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
                       ),
-                    ],
+                    ),
                   ),
-                ),
-              ),
+                );
+              },
             ),
-          );
-        },
-      ),
           ),
           // Disk Space Indicator (also shown in status bar now, but kept here for now or we can remove it from here)
           // Removing from here to avoid duplication. It will be moved to the status bar.
@@ -333,7 +376,7 @@ class _PanelDriveBarState extends ConsumerState<PanelDriveBar> {
                   onPressed: () => _showRecentsMenu(context, theme),
                   tooltip: 'Son Kullanılanlar',
                 );
-              }
+              },
             ),
           ),
         ],
@@ -341,7 +384,11 @@ class _PanelDriveBarState extends ConsumerState<PanelDriveBar> {
     );
   }
 
-  void _showDriveContextMenu(BuildContext context, Offset globalPosition, _DriveItem item) {
+  void _showDriveContextMenu(
+    BuildContext context,
+    Offset globalPosition,
+    _DriveItem item,
+  ) {
     final connections = ref.read(connectionRepositoryProvider);
     final profile = connections.where((p) => p.id == item.id).firstOrNull;
     if (profile == null) return;
@@ -386,7 +433,10 @@ class _PanelDriveBarState extends ConsumerState<PanelDriveBar> {
             children: [
               Icon(Icons.delete_outline, color: Colors.red, size: 18),
               SizedBox(width: 8),
-              Text('Bağlantıyı Sil / Kaldır', style: TextStyle(color: Colors.red)),
+              Text(
+                'Bağlantıyı Sil / Kaldır',
+                style: TextStyle(color: Colors.red),
+              ),
             ],
           ),
         ),
@@ -394,7 +444,9 @@ class _PanelDriveBarState extends ConsumerState<PanelDriveBar> {
     ).then((value) async {
       if (value == null) return;
       if (value == 'disconnect') {
-        await ref.read(storageProviderRegistryProvider.notifier).unregister(profile.id);
+        await ref
+            .read(storageProviderRegistryProvider.notifier)
+            .unregister(profile.id);
         if (mounted) setState(() {});
       } else if (value == 'edit') {
         showDialog(
@@ -406,9 +458,14 @@ class _PanelDriveBarState extends ConsumerState<PanelDriveBar> {
           context: context,
           builder: (_) => AlertDialog(
             title: const Text('Bağlantıyı Kaldır'),
-            content: Text('"${profile.name}" bağlantısını kaldırmak istediğinize emin misiniz?'),
+            content: Text(
+              '"${profile.name}" bağlantısını kaldırmak istediğinize emin misiniz?',
+            ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('İptal')),
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('İptal'),
+              ),
               FilledButton(
                 style: FilledButton.styleFrom(backgroundColor: Colors.red),
                 onPressed: () => Navigator.pop(context, true),
@@ -418,16 +475,20 @@ class _PanelDriveBarState extends ConsumerState<PanelDriveBar> {
           ),
         );
         if (confirmed == true) {
-          await ref.read(connectionRepositoryProvider.notifier).deleteConnection(profile.id);
-          await ref.read(storageProviderRegistryProvider.notifier).unregister(profile.id);
+          await ref
+              .read(connectionRepositoryProvider.notifier)
+              .deleteConnection(profile.id);
+          await ref
+              .read(storageProviderRegistryProvider.notifier)
+              .unregister(profile.id);
 
-          final activeState = widget.side == PanelSide.a
-              ? ref.read(panelAProvider)
-              : ref.read(panelBProvider);
+          final activeState = ref.read(panelStateProvider(widget.side));
           if (activeState.activeTab.providerId == profile.id) {
             final localProvider = ref.read(localStorageProviderProvider);
             final homePath = await localProvider.homePath;
-            ref.read(panelControllerProvider.notifier).navigate(widget.side, homePath, providerId: 'local');
+            ref
+                .read(panelControllerProvider.notifier)
+                .navigate(widget.side, homePath, providerId: 'local');
           }
         }
       }
@@ -436,42 +497,52 @@ class _PanelDriveBarState extends ConsumerState<PanelDriveBar> {
 
   void _showRecentsMenu(BuildContext context, ThemeData theme) {
     final recentState = ref.read(recentServiceProvider);
-    
+
     final items = <CascadeMenuItem>[
       CascadeMenuItem(
         value: 'header_folders',
         label: 'Son Klasörler',
         icon: Icons.folder,
-        children: recentState.recentFolders.map((path) => CascadeMenuItem(
-          value: 'folder_$path',
-          label: path.split('/').last.isEmpty ? path : path.split('/').last,
-          icon: Icons.folder_open,
-        )).toList(),
+        children: recentState.recentFolders
+            .map(
+              (path) => CascadeMenuItem(
+                value: 'folder_$path',
+                label: path.split('/').last.isEmpty
+                    ? path
+                    : path.split('/').last,
+                icon: Icons.folder_open,
+              ),
+            )
+            .toList(),
       ),
       CascadeMenuItem(
         value: 'header_files',
         label: 'Son Dosyalar',
         icon: Icons.insert_drive_file,
-        children: recentState.recentFiles.map((path) => CascadeMenuItem(
-          value: 'file_$path',
-          label: path.split('/').last,
-          icon: Icons.file_present,
-        )).toList(),
+        children: recentState.recentFiles
+            .map(
+              (path) => CascadeMenuItem(
+                value: 'file_$path',
+                label: path.split('/').last,
+                icon: Icons.file_present,
+              ),
+            )
+            .toList(),
       ),
     ];
 
     final RenderBox button = context.findRenderObject() as RenderBox;
     final position = button.localToGlobal(Offset(0, button.size.height));
 
-    showCascadeMenu(
-      context: context,
-      position: position,
-      items: items,
-    ).then((value) {
+    showCascadeMenu(context: context, position: position, items: items).then((
+      value,
+    ) {
       if (value == null) return;
       if (value.startsWith('folder_')) {
         final path = value.substring('folder_'.length);
-        ref.read(panelControllerProvider.notifier).navigate(widget.side, path, providerId: 'local');
+        ref
+            .read(panelControllerProvider.notifier)
+            .navigate(widget.side, path, providerId: 'local');
       } else if (value.startsWith('file_')) {
         final path = value.substring('file_'.length);
         ref.read(fileOpenServiceProvider.notifier).openWithDefault(path);
@@ -552,7 +623,8 @@ class _DiskSpaceIndicatorState extends ConsumerState<DiskSpaceIndicator> {
   @override
   void didUpdateWidget(covariant DiskSpaceIndicator oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.providerId != widget.providerId || oldWidget.path != widget.path) {
+    if (oldWidget.providerId != widget.providerId ||
+        oldWidget.path != widget.path) {
       _fetchSpace();
     }
   }
@@ -560,17 +632,17 @@ class _DiskSpaceIndicatorState extends ConsumerState<DiskSpaceIndicator> {
   Future<void> _fetchSpace() async {
     if (widget.providerId.isEmpty || widget.path.isEmpty) return;
     if (_lastPath == widget.path && _info != null) return;
-    
+
     setState(() {
       _isLoading = true;
     });
 
     try {
       final registry = ref.read(storageProviderRegistryProvider);
-      final provider = widget.providerId == 'local' 
+      final provider = widget.providerId == 'local'
           ? ref.read(localStorageProviderProvider)
           : registry[widget.providerId];
-          
+
       if (provider != null) {
         final info = await provider.getDiskSpaceInfo(widget.path);
         if (mounted) {
@@ -607,9 +679,9 @@ class _DiskSpaceIndicatorState extends ConsumerState<DiskSpaceIndicator> {
       return const Padding(
         padding: EdgeInsets.symmetric(horizontal: 8.0),
         child: SizedBox(
-          width: 12, 
-          height: 12, 
-          child: CircularProgressIndicator(strokeWidth: 2)
+          width: 12,
+          height: 12,
+          child: CircularProgressIndicator(strokeWidth: 2),
         ),
       );
     }
@@ -617,8 +689,10 @@ class _DiskSpaceIndicatorState extends ConsumerState<DiskSpaceIndicator> {
     if (_info == null) return const SizedBox.shrink();
 
     final theme = Theme.of(context);
-    final percent = _info!.totalBytes > 0 ? (_info!.usedBytes / _info!.totalBytes).clamp(0.0, 1.0) : 0.0;
-    
+    final percent = _info!.totalBytes > 0
+        ? (_info!.usedBytes / _info!.totalBytes).clamp(0.0, 1.0)
+        : 0.0;
+
     Color progressColor = theme.colorScheme.primary;
     if (percent > 0.9) {
       progressColor = theme.colorScheme.error;
@@ -629,7 +703,8 @@ class _DiskSpaceIndicatorState extends ConsumerState<DiskSpaceIndicator> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8.0),
       child: Tooltip(
-        message: 'Kullanılan: ${_formatBytes(_info!.usedBytes)}\nToplam: ${_formatBytes(_info!.totalBytes)}',
+        message:
+            'Kullanılan: ${_formatBytes(_info!.usedBytes)}\nToplam: ${_formatBytes(_info!.totalBytes)}',
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
