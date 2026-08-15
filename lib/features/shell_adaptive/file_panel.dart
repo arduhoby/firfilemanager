@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:filesize/filesize.dart';
 import 'package:flutter/material.dart';
@@ -5,6 +6,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/generated/app_localizations.dart' as gen;
+import '../../core/commands/command_context.dart';
+import '../../core/commands/command_id.dart';
+import '../../core/commands/command_result.dart';
 import '../../core/storage/models/file_entry.dart';
 import '../../core/storage/storage_provider.dart';
 import '../../core/theme/glass_container.dart';
@@ -17,6 +21,10 @@ import '../file_operations/file_operations_state.dart';
 import '../file_operations/panel_drag_policy.dart';
 import '../file_operations/file_open_service.dart';
 import '../file_operations/file_operations_service.dart';
+import '../context_menu/application/command_orchestrator.dart';
+import '../context_menu/application/file_panel_command_registry.dart';
+import '../context_menu/commands/command_action.dart';
+import '../context_menu/presentation/file_panel_context_menu_builder.dart';
 import '../shell_adaptive/panel_controller.dart';
 import '../preview/quick_look_dialog.dart';
 import '../../core/settings/settings_provider.dart';
@@ -299,351 +307,365 @@ class _FilePanelState extends ConsumerState<FilePanel> {
     Offset position, {
     FileEntry? entry,
   }) {
+    unawaited(_openContextMenu(context, position, entry: entry));
+  }
+
+  Future<void> _openContextMenu(
+    BuildContext context,
+    Offset position, {
+    FileEntry? entry,
+  }) async {
     final l10n = gen.AppLocalizations.of(context)!;
     final actions = ref.read(fileOperationsActionsProvider.notifier);
-    final isArchive = entry != null && actions.isArchiveFile(entry);
     final clipboard = ref.read(fileClipboardProvider);
     final hasClipboardItems =
         clipboard != null && clipboard.sourcePaths.isNotEmpty;
     final editorName = preferredEditorName(currentFileOpenPlatform);
+    final provider = _providerForPanel(widget.side);
     final canOpenInTerminal = supportsTerminalOpenForProvider(
       platform: currentFileOpenPlatform,
-      provider: _providerForPanel(widget.side),
+      provider: provider,
+    );
+    final selected = _panelState.activeTab.selectedEntries;
+    final entries = entry == null
+        ? selected
+        : (selected.isEmpty ? <FileEntry>[entry] : selected);
+    final commandContext = _createCommandContext(
+      entry: entry,
+      entries: entries,
+      provider: provider,
+      canOpenInTerminal: canOpenInTerminal,
+      hasClipboardItems: hasClipboardItems,
+    );
+    final registry = buildFilePanelCommandRegistry(
+      _filePanelCommandActions(context, actions),
+    );
+    final menu = FilePanelContextMenuBuilder(registry).build(
+      FilePanelContextMenuInput(
+        context: commandContext,
+        labels: _contextMenuLabels(l10n),
+        hasEntry: entry != null,
+        entryIsDirectory: entry?.isDirectory ?? false,
+        entryIsArchive: entry != null && actions.isArchiveFile(entry),
+        entryIsShared: entry?.isShared ?? false,
+        recentApplications: _recentApplicationMenuItems(),
+        editorName: editorName,
+      ),
     );
 
-    // Build CascadeMenuItem list
-    final List<CascadeMenuItem> items;
-    if (entry != null) {
-      items = [
-        if (entry.isDirectory) ...[
-          CascadeMenuItem(
-            value: 'open',
-            label: l10n.actionOpen,
-            icon: Icons.folder_open,
-          ),
-          if (canOpenInTerminal)
-            const CascadeMenuItem(
-              value: 'openTerminal',
-              label: 'Terminalde aç',
-              icon: Icons.terminal,
-            ),
-        ] else ...[
-          CascadeMenuItem(
-            value: 'openDefault',
-            label: l10n.actionOpenDefault,
-            icon: Icons.launch,
-          ),
-          CascadeMenuItem(
-            value: 'editFile',
-            label: editorName == null
-                ? l10n.actionEdit
-                : '${l10n.actionEdit} ($editorName)',
-            icon: Icons.edit_note,
-          ),
-          CascadeMenuItem(
-            value: 'openWith',
-            label: l10n.actionOpenWith,
-            icon: Icons.open_in_new,
-            children: [
-              ...ref.read(recentServiceProvider).recentApps.map((appPath) {
-                final appName = appPath
-                    .split(RegExp(r'[/\\]'))
-                    .last
-                    .replaceAll(RegExp(r'\.app$', caseSensitive: false), '');
-                return CascadeMenuItem(
-                  value: 'recentApp_$appPath',
-                  label: appName,
-                  icon: Icons.launch,
-                );
-              }),
-              CascadeMenuItem(
-                value: 'chooseAppAndOpen',
-                label: l10n.actionChooseApplication,
-                icon: Icons.apps,
-              ),
-            ],
-          ),
-        ],
-        CascadeMenuItem(
-          value: 'quickLook',
-          label: 'Önizle (Quick Look)',
-          icon: Icons.visibility,
-        ),
-        CascadeMenuItem(
-          value: 'reveal',
-          label: l10n.actionRevealInFinder,
-          icon: Icons.search,
-        ),
-        CascadeMenuItem(
-          value: 'copyPath',
-          label: 'Copy Path',
-          icon: Icons.copy_all,
-        ),
-        const CascadeMenuItem.divider(),
-        CascadeMenuItem(
-          value: 'copy',
-          label: l10n.actionCopy,
-          icon: Icons.copy,
-        ),
-        CascadeMenuItem(value: 'move', label: l10n.actionMove, icon: Icons.cut),
-        if (hasClipboardItems)
-          CascadeMenuItem(
-            value: 'paste',
-            label: l10n.actionPaste,
-            icon: Icons.paste,
-          ),
-        CascadeMenuItem(
-          value: 'rename',
-          label: l10n.actionRename,
-          icon: Icons.edit,
-        ),
-        CascadeMenuItem(
-          value: 'delete',
-          label: l10n.actionDelete,
-          icon: Icons.delete,
-          isDestructive: true,
-        ),
-        const CascadeMenuItem.divider(),
-        // Sıkıştırma — cascade submenu
-        CascadeMenuItem(
-          value: 'compress',
-          label: 'Sıkıştırma',
-          icon: Icons.archive_outlined,
-          children: [
-            CascadeMenuItem(
-              value: 'compressZip',
-              label: l10n.actionCompressZip,
-              icon: Icons.folder_zip,
-            ),
-            CascadeMenuItem(
-              value: 'compressTar',
-              label: l10n.actionCompressTar,
-              icon: Icons.archive_outlined,
-            ),
-            CascadeMenuItem(
-              value: 'compressTarGz',
-              label: l10n.actionCompressTarGz,
-              icon: Icons.compress,
-            ),
-            const CascadeMenuItem.divider(),
-            CascadeMenuItem(
-              value: 'compressZipPwd',
-              label: 'Şifreli ZIP...',
-              icon: Icons.lock_outline,
-            ),
-          ],
-        ),
-        if (isArchive)
-          CascadeMenuItem(
-            value: 'extract',
-            label: l10n.actionExtract,
-            icon: Icons.unarchive,
-          ),
-        if (entry.isShared)
-          const CascadeMenuItem(
-            value: 'shareSmb',
-            label: 'Stop Sharing SMB / Edit',
-            icon: Icons.link_off,
-          )
-        else
-          const CascadeMenuItem(
-            value: 'shareSmb',
-            label: 'Share via SMB',
-            icon: Icons.share,
-          ),
-        const CascadeMenuItem.divider(),
-        CascadeMenuItem(
-          value: 'properties',
-          label: l10n.actionProperties,
-          icon: Icons.info_outline,
-        ),
-      ];
-    } else {
-      items = [
-        CascadeMenuItem(
-          value: 'newFolder',
-          label: l10n.actionNewFolder,
-          icon: Icons.create_new_folder,
-        ),
-        const CascadeMenuItem(
-          value: 'newFile',
-          label: 'Yeni Dosya',
-          icon: Icons.note_add,
-        ),
-        if (hasClipboardItems)
-          CascadeMenuItem(
-            value: 'paste',
-            label: l10n.actionPaste,
-            icon: Icons.paste,
-          ),
-        CascadeMenuItem(
-          value: 'toggleHiddenBg',
-          label: _panelState.activeTab.showHidden
-              ? 'Gizli dosyaları gizle'
-              : 'Gizli dosyaları göster',
-          icon: _panelState.activeTab.showHidden
-              ? Icons.visibility_off
-              : Icons.visibility,
-        ),
-        if (canOpenInTerminal)
-          const CascadeMenuItem(
-            value: 'openTerminalBg',
-            label: 'Terminalde aç',
-            icon: Icons.terminal,
-          ),
-        CascadeMenuItem(
-          value: 'revealBg',
-          label: l10n.actionRevealInFinder,
-          icon: Icons.search,
-        ),
-        const CascadeMenuItem(
-          value: 'copyBgPath',
-          label: 'Copy Path',
-          icon: Icons.copy_all,
-        ),
-        const CascadeMenuItem.divider(),
-        CascadeMenuItem(
-          value: 'equalPath',
-          label: 'Diğer Paneli Eşitle (=)',
-          icon: Icons.drag_handle,
-        ),
-        CascadeMenuItem(
-          value: 'selectAll',
-          label: l10n.actionSelectAll,
-          icon: Icons.select_all,
-        ),
-        CascadeMenuItem(
-          value: 'refresh',
-          label: l10n.actionRefresh,
-          icon: Icons.refresh,
-        ),
-      ];
-    }
+    final value = await showCascadeMenu(
+      context: context,
+      position: position,
+      items: menu.items,
+    );
+    if (value == null || !mounted) return;
+    final selection = menu.selections[value];
+    if (selection == null) return;
+    await CommandOrchestrator(registry: registry).dispatch(
+      selection.commandId,
+      commandContext.withArguments(selection.arguments),
+    );
+  }
 
-    showCascadeMenu(context: context, position: position, items: items).then((
-      value,
-    ) async {
-      if (value == null) return;
+  CommandContext _createCommandContext({
+    required FileEntry? entry,
+    required List<FileEntry> entries,
+    required StorageProvider provider,
+    required bool canOpenInTerminal,
+    required bool hasClipboardItems,
+  }) {
+    final capabilities = <CommandCapability>{
+      CommandCapability.read,
+      CommandCapability.archive,
+      CommandCapability.share,
+      if (provider.supports(ProviderCapability.write)) CommandCapability.write,
+      if (provider.supports(ProviderCapability.move)) CommandCapability.rename,
+      if (provider.supports(ProviderCapability.delete))
+        CommandCapability.delete,
+      if (canOpenInTerminal) ...<CommandCapability>{
+        CommandCapability.localPath,
+        CommandCapability.terminal,
+      },
+    };
+    return CommandContext(
+      sourcePanelId: widget.side.value,
+      providerId: _panelState.activeTab.providerId,
+      currentPath: _panelState.activeTab.currentPath,
+      clickedEntry: entry,
+      selectedEntries: entries,
+      targetPanelIds: ref
+          .read(panelWorkspaceProvider)
+          .panelOrder
+          .where((panelId) => panelId != widget.side)
+          .map((panelId) => panelId.value)
+          .toList(growable: false),
+      capabilities: capabilities,
+      showHidden: _panelState.activeTab.showHidden,
+      hasClipboardEntries: hasClipboardItems,
+    );
+  }
 
-      if (entry == null) {
-        switch (value) {
-          case 'newFolder':
-            actions.showNewFolderDialog(context, widget.side);
-          case 'newFile':
-            actions.showNewFileDialog(context, widget.side);
-          case 'paste':
-            actions.paste(context, widget.side);
-          case 'toggleHiddenBg':
-            _panels.toggleHidden(widget.side);
-          case 'openTerminalBg':
-            await _openInTerminal(_panelState.activeTab.currentPath);
-          case 'revealBg':
-            ref
-                .read(fileOpenServiceProvider.notifier)
-                .revealInFileManager(_panelState.activeTab.currentPath);
-          case 'copyBgPath':
-            Clipboard.setData(
-              ClipboardData(text: _panelState.activeTab.currentPath),
-            );
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Path copied to clipboard')),
-            );
-          case 'equalPath':
-            final otherSide = _otherPanelId;
-            ref
-                .read(panelControllerProvider.notifier)
-                .navigate(
-                  otherSide,
-                  _panelState.activeTab.currentPath,
-                  providerId: _panelState.activeTab.providerId,
-                );
-          case 'selectAll':
-            _panels.selectAll(widget.side);
-          case 'refresh':
-            ref.read(panelControllerProvider.notifier).refresh(widget.side);
-        }
-        return;
+  FilePanelContextMenuLabels _contextMenuLabels(gen.AppLocalizations l10n) =>
+      FilePanelContextMenuLabels(
+        open: l10n.actionOpen,
+        openDefault: l10n.actionOpenDefault,
+        edit: l10n.actionEdit,
+        openWith: l10n.actionOpenWith,
+        chooseApplication: l10n.actionChooseApplication,
+        quickLook: 'Önizle (Quick Look)',
+        reveal: l10n.actionRevealInFinder,
+        copyPath: 'Yolu Kopyala',
+        copy: l10n.actionCopy,
+        move: l10n.actionMove,
+        paste: l10n.actionPaste,
+        rename: l10n.actionRename,
+        delete: l10n.actionDelete,
+        compress: 'Sıkıştırma',
+        compressZip: l10n.actionCompressZip,
+        compressTar: l10n.actionCompressTar,
+        compressTarGz: l10n.actionCompressTarGz,
+        compressPasswordZip: 'Şifreli ZIP...',
+        extract: l10n.actionExtract,
+        shareSmb: 'SMB ile Paylaş',
+        stopSharingSmb: 'SMB Paylaşımını Durdur / Düzenle',
+        properties: l10n.actionProperties,
+        newFolder: l10n.actionNewFolder,
+        newFile: 'Yeni Dosya',
+        showHidden: 'Gizli dosyaları göster',
+        hideHidden: 'Gizli dosyaları gizle',
+        openTerminal: 'Terminalde aç',
+        equalizePanel: 'Diğer Paneli Eşitle (=)',
+        selectAll: l10n.actionSelectAll,
+        refresh: l10n.actionRefresh,
+      );
+
+  List<RecentApplicationMenuItem> _recentApplicationMenuItems() => ref
+      .read(recentServiceProvider)
+      .recentApps
+      .map(
+        (appPath) => RecentApplicationMenuItem(
+          path: appPath,
+          label: appPath
+              .split(RegExp(r'[/\\]'))
+              .last
+              .replaceAll(RegExp(r'\.app$', caseSensitive: false), ''),
+        ),
+      )
+      .toList(growable: false);
+
+  Map<CommandId, CommandAction> _filePanelCommandActions(
+    BuildContext uiContext,
+    FileOperationsActions actions,
+  ) => <CommandId, CommandAction>{
+    ..._openCommandActions(uiContext, actions),
+    ..._operationCommandActions(uiContext, actions),
+    ..._backgroundCommandActions(uiContext, actions),
+  };
+
+  Map<CommandId, CommandAction> _openCommandActions(
+    BuildContext uiContext,
+    FileOperationsActions actions,
+  ) => <CommandId, CommandAction>{
+    CommandId.openEntry: (commandContext) async {
+      _onEntryDoubleTap(commandContext.clickedEntry!);
+      return const CommandResult.completed();
+    },
+    CommandId.openDefault: (commandContext) async {
+      await actions.openWithDefault(
+        uiContext,
+        widget.side,
+        commandContext.clickedEntry!,
+      );
+      return const CommandResult.completed();
+    },
+    CommandId.editFile: (commandContext) async {
+      await actions.editFile(uiContext, commandContext.clickedEntry!);
+      return const CommandResult.completed();
+    },
+    CommandId.openWith: (commandContext) async {
+      final applicationPath = commandContext.argument<String>(
+        'applicationPath',
+      );
+      if (applicationPath == null) {
+        await actions.chooseAppAndOpen(uiContext, commandContext.clickedEntry!);
+      } else {
+        await actions.openWithApplication(
+          uiContext,
+          commandContext.clickedEntry!,
+          applicationPath,
+        );
       }
-
-      final selected = _panelState.activeTab.selectedEntries;
-      final entries = selected.isEmpty ? [entry] : selected;
-
-      switch (value) {
-        case 'open':
-          _onEntryDoubleTap(entry);
-        case 'openDefault':
-          actions.openWithDefault(context, widget.side, entry);
-        case 'editFile':
-          actions.editFile(context, entry);
-        case 'chooseAppAndOpen':
-          actions.chooseAppAndOpen(context, entry);
-        case String v when v.startsWith('recentApp_'):
-          final applicationPath = v.substring('recentApp_'.length);
-          actions.openWithApplication(context, entry, applicationPath);
-        case 'quickLook':
-          showDialog(
-            context: context,
-            builder: (context) => QuickLookDialog(
-              entry: entry,
-              providerId: _panelState.activeTab.providerId,
-            ),
-          );
-        case 'reveal':
-          actions.revealInFileManager(context, entry);
-        case 'copyPath':
-          Clipboard.setData(ClipboardData(text: entry.path));
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Path copied to clipboard')),
-          );
-        case 'copy':
-          actions.copyToClipboard(widget.side, entries);
-        case 'move':
-          actions.cutToClipboard(widget.side, entries);
-        case 'openTerminal':
-          await _openInTerminal(entry.path);
-        case 'paste':
-          // Her zaman actions.paste() kullan: animasyon, hata yönetimi ve pano temizleme.
-          // burada yap\u0131l\u0131yor. Direkt service.paste() \u00e7a\u011fr\u0131s\u0131 bu katmanlar\u0131 bypass eder.
-          actions.paste(context, widget.side);
-        case 'rename':
-          _startInlineRename(entry);
-        case 'delete':
-          actions.showDeleteDialog(context, widget.side, entries);
-        case 'compressZip':
-          actions.compressEntries(
-            context,
-            widget.side,
-            entries,
-            ArchiveFormat.zip,
-          );
-        case 'compressTar':
-          actions.compressEntries(
-            context,
-            widget.side,
-            entries,
-            ArchiveFormat.tar,
-          );
-        case 'compressTarGz':
-          actions.compressEntries(
-            context,
-            widget.side,
-            entries,
-            ArchiveFormat.tarGz,
-          );
-        case 'compressZipPwd':
-          actions.compressEntriesWithPassword(context, widget.side, entries);
-        case 'extract':
-          actions.extractArchive(context, widget.side, entry);
-        case 'shareSmb':
-          actions.showShareSmbDialog(context, entry);
-        case 'properties':
-          if (entry.isDirectory) {
-            _showFolderPropertiesDialog(context, entry);
-          } else {
-            actions.showPropertiesDialog(context, entry);
-          }
+      return const CommandResult.completed();
+    },
+    CommandId.quickLook: (commandContext) async {
+      await showDialog<void>(
+        context: uiContext,
+        builder: (dialogContext) => QuickLookDialog(
+          entry: commandContext.clickedEntry!,
+          providerId: commandContext.providerId,
+        ),
+      );
+      return const CommandResult.completed();
+    },
+    CommandId.reveal: (commandContext) async {
+      await actions.revealInFileManager(
+        uiContext,
+        commandContext.clickedEntry!,
+      );
+      return const CommandResult.completed();
+    },
+    CommandId.copyPath: (commandContext) async {
+      await _copyPathToClipboard(uiContext, commandContext.clickedEntry!.path);
+      return const CommandResult.completed();
+    },
+    CommandId.openTerminal: (commandContext) async {
+      await _openInTerminal(commandContext.clickedEntry!.path);
+      return const CommandResult.completed();
+    },
+    CommandId.shareSmb: (commandContext) async {
+      await actions.showShareSmbDialog(uiContext, commandContext.clickedEntry!);
+      return const CommandResult.completed();
+    },
+    CommandId.properties: (commandContext) async {
+      final selectedEntry = commandContext.clickedEntry!;
+      if (selectedEntry.isDirectory) {
+        _showFolderPropertiesDialog(uiContext, selectedEntry);
+      } else {
+        await actions.showPropertiesDialog(uiContext, selectedEntry);
       }
-    });
+      return const CommandResult.completed();
+    },
+  };
+
+  Map<CommandId, CommandAction> _operationCommandActions(
+    BuildContext uiContext,
+    FileOperationsActions actions,
+  ) => <CommandId, CommandAction>{
+    CommandId.copySelection: (commandContext) async {
+      actions.copyToClipboard(widget.side, commandContext.effectiveEntries);
+      return const CommandResult.completed();
+    },
+    CommandId.moveSelection: (commandContext) async {
+      actions.cutToClipboard(widget.side, commandContext.effectiveEntries);
+      return const CommandResult.completed();
+    },
+    CommandId.paste: (commandContext) async {
+      await actions.paste(uiContext, widget.side);
+      return const CommandResult.completed();
+    },
+    CommandId.rename: (commandContext) async {
+      _startInlineRename(commandContext.effectiveEntries.single);
+      return const CommandResult.completed();
+    },
+    CommandId.delete: (commandContext) async {
+      await actions.showDeleteDialog(
+        uiContext,
+        widget.side,
+        commandContext.effectiveEntries,
+      );
+      return const CommandResult.completed();
+    },
+    CommandId.compressZip: (commandContext) async {
+      await actions.compressEntries(
+        uiContext,
+        widget.side,
+        commandContext.effectiveEntries,
+        ArchiveFormat.zip,
+      );
+      return const CommandResult.completed();
+    },
+    CommandId.compressTar: (commandContext) async {
+      await actions.compressEntries(
+        uiContext,
+        widget.side,
+        commandContext.effectiveEntries,
+        ArchiveFormat.tar,
+      );
+      return const CommandResult.completed();
+    },
+    CommandId.compressTarGz: (commandContext) async {
+      await actions.compressEntries(
+        uiContext,
+        widget.side,
+        commandContext.effectiveEntries,
+        ArchiveFormat.tarGz,
+      );
+      return const CommandResult.completed();
+    },
+    CommandId.compressPasswordZip: (commandContext) async {
+      await actions.compressEntriesWithPassword(
+        uiContext,
+        widget.side,
+        commandContext.effectiveEntries,
+      );
+      return const CommandResult.completed();
+    },
+    CommandId.extract: (commandContext) async {
+      await actions.extractArchive(
+        uiContext,
+        widget.side,
+        commandContext.clickedEntry!,
+      );
+      return const CommandResult.completed();
+    },
+  };
+
+  Map<CommandId, CommandAction> _backgroundCommandActions(
+    BuildContext uiContext,
+    FileOperationsActions actions,
+  ) => <CommandId, CommandAction>{
+    CommandId.createFolder: (commandContext) async {
+      await actions.showNewFolderDialog(uiContext, widget.side);
+      return const CommandResult.completed();
+    },
+    CommandId.createFile: (commandContext) async {
+      await actions.showNewFileDialog(uiContext, widget.side);
+      return const CommandResult.completed();
+    },
+    CommandId.toggleHidden: (commandContext) async {
+      _panels.toggleHidden(widget.side);
+      return const CommandResult.completed();
+    },
+    CommandId.openTerminalHere: (commandContext) async {
+      await _openInTerminal(commandContext.currentPath);
+      return const CommandResult.completed();
+    },
+    CommandId.revealCurrentFolder: (commandContext) async {
+      await ref
+          .read(fileOpenServiceProvider.notifier)
+          .revealInFileManager(commandContext.currentPath);
+      return const CommandResult.completed();
+    },
+    CommandId.copyCurrentPath: (commandContext) async {
+      await _copyPathToClipboard(uiContext, commandContext.currentPath);
+      return const CommandResult.completed();
+    },
+    CommandId.equalizePanelPath: (commandContext) async {
+      await ref
+          .read(panelControllerProvider.notifier)
+          .navigate(
+            _otherPanelId,
+            commandContext.currentPath,
+            providerId: commandContext.providerId,
+          );
+      return const CommandResult.completed();
+    },
+    CommandId.selectAll: (commandContext) async {
+      _panels.selectAll(widget.side);
+      return const CommandResult.completed();
+    },
+    CommandId.refresh: (commandContext) async {
+      await ref.read(panelControllerProvider.notifier).refresh(widget.side);
+      return const CommandResult.completed();
+    },
+  };
+
+  Future<void> _copyPathToClipboard(BuildContext uiContext, String path) async {
+    await Clipboard.setData(ClipboardData(text: path));
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      uiContext,
+    ).showSnackBar(const SnackBar(content: Text('Yol panoya kopyalandı')));
   }
 
   void _navigateToAddress() {

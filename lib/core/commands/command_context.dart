@@ -21,6 +21,7 @@ class CommandContext {
     this.selectedEntries = const <FileEntry>[],
     this.targetPanelIds = const <String>[],
     this.capabilities = const <CommandCapability>{},
+    this.arguments = const <String, Object?>{},
     this.showHidden = false,
     this.hasClipboardEntries = false,
   });
@@ -32,6 +33,7 @@ class CommandContext {
   final List<FileEntry> selectedEntries;
   final List<String> targetPanelIds;
   final Set<CommandCapability> capabilities;
+  final Map<String, Object?> arguments;
   final bool showHidden;
   final bool hasClipboardEntries;
 
@@ -45,4 +47,22 @@ class CommandContext {
 
   bool supports(CommandCapability capability) =>
       capabilities.contains(capability);
+
+  T? argument<T>(String key) {
+    final value = arguments[key];
+    return value is T ? value : null;
+  }
+
+  CommandContext withArguments(Map<String, Object?> values) => CommandContext(
+    sourcePanelId: sourcePanelId,
+    providerId: providerId,
+    currentPath: currentPath,
+    clickedEntry: clickedEntry,
+    selectedEntries: selectedEntries,
+    targetPanelIds: targetPanelIds,
+    capabilities: capabilities,
+    arguments: Map<String, Object?>.unmodifiable(values),
+    showHidden: showHidden,
+    hasClipboardEntries: hasClipboardEntries,
+  );
 }
