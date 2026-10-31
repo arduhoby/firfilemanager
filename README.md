@@ -13,7 +13,9 @@ Fir File Manager is a modern, cross-platform dual-pane file manager built with F
 - **Extensive File Operations**: Seamlessly Copy, Cut, Paste, Rename, Move, and Delete files and directories.
 - **Drag & Drop Support**: Move files effortlessly between panels with drag and drop capabilities.
 - **Keyboard Shortcuts & Clean UI**: Fully keyboard navigable for power users (F5 for Copy, F6 for Move, Cmd+C/Cmd+V, etc.) with custom hover-animated buttons built from state-of-the-art design systems.
-- **Multi-Protocol Support**: Built-in abstractions for Local, FTP, and Cloud Storage (Google Drive) filesystems.
+- **Multi-Protocol Support**: Built-in abstractions for Local, FTP, SFTP, WebDAV (Nextcloud), SMB, and Cloud Storage (Google Drive, OneDrive, Dropbox) filesystems.
+- **Fast Transfers**: Paged cloud listings, single-request directory scans, small-file parallel copy (Local/WebDAV), and batched post-transfer verification keep large trees responsive (v1.1.1).
+- **Built-in Server Mode**: Share your files over FTP and WebDAV from the app; the shared password is remembered across restarts via the platform keystore, and credentials are never written to logs (v1.1.2).
 
 ## Getting Started
 
@@ -38,7 +40,9 @@ Fir File Manager, Flutter ile geliştirilmiş modern, çok platformlu ve çift p
 - **Kapsamlı Dosya İşlemleri**: Kopyalama, kesme, yapıştırma, yeniden adlandırma, taşıma ve silme gibi tüm klasik dosya işlemlerini destekler.
 - **Sürükle & Bırak (Drag & Drop)**: Paneller arasında dosyaları farenizle rahatça sürükleyip bırakabilirsiniz.
 - **Klavye Kısayolları ve Modern Arayüz**: Gelişmiş kullanıcılar için tamamen klavye ile yönetilebilir yapı (F5 Kopyalama, F6 Taşıma, Cmd+C/Cmd+V vb.) ve Uiverse tabanlı modern animasyonlu butonlar.
-- **Çoklu Protokol**: Yerel (Local), FTP ve Bulut Depolama (Google Drive) dosya sistemleri için esnek altyapı destekleri içerir.
+- **Çoklu Protokol**: Yerel (Local), FTP, SFTP, WebDAV (Nextcloud), SMB ve Bulut Depolama (Google Drive, OneDrive, Dropbox) dosya sistemleri için esnek altyapı destekleri içerir.
+- **Hızlı Transferler**: Sayfalı bulut listelemeleri, dizin başına tek istekli tarama, küçük dosyalarda paralel kopyalama (Local/WebDAV) ve toplu aktarım-sonrası doğrulama ile büyük ağaçlarda akıcı deneyim (v1.1.1).
+- **Yerleşik Sunucu Modu**: Dosyalarınızı uygulama içinden FTP ve WebDAV ile paylaşın; paylaşım şifresi platform anahtar deposunda saklanarak yeniden başlatmalarda hatırlanır ve bilgiler asla loglara yazılmaz (v1.1.2).
 
 ## Başlangıç
 
@@ -47,3 +51,31 @@ Fir File Manager, Flutter ile geliştirilmiş modern, çok platformlu ve çift p
 3. `lib/env.dart.example` dosyasının bir kopyasını oluşturup adını `lib/env.dart` yapın. Gerekirse Google Drive API anahtarlarınızı bu dosyaya yazabilirsiniz.
 4. Bağımlılıkları yüklemek için `flutter pub get` komutunu çalıştırın.
 5. `flutter run -d macos` komutu ile uygulamayı başlatın (En iyi masaüstü deneyimi için macOS önerilir).
+
+## Son Oturum Analizi: Yavaş Kopya/Hareket İşlemleri (2026-10-31)
+
+Bu oturumda, uzak/bulut sunucularında kopya ve hareket işlemlerinin yavaş olmasının nedenleri derinlemesine analiz edilmiştir. Aşağıda özetlenen bulgular, gelecekteki geliştirme ve optimizasyonlar için temel oluşturacaktır:
+
+### Ana Bulgular
+- `move()` metodu, sunucu tarafında yeniden adlandırma yerine kopya + doğrulama + silme işlemi gerçekleştirir.
+- `local_provider.dart` dosyasında, her ilerleme bildirimi için 1ms yapay gecikme eklenmiştir.
+- `panel_controller.dart` dosyasında, izleyici (watcher) için debounce mekanizması yoktur.
+- `file_operations_service.dart` ve `file_tree_inventory_service.dart` dosyalarında, hazırlık aşamasında throttle mekanizması eksikdir.
+- `webdav_provider.dart` ve `nextcloud_provider.dart` dosyalarında, sunucu tarafı COPY işlemi desteklenmemektedir.
+- `ftp_provider.dart` dosyasında, `stat()` metodu, üst klasör listesini tetikler.
+- `google_drive_provider.dart` dosyasında, yazma işlemi sırasında tüm dosya bellekte tutulur.
+- `parallel_transfer_capable.dart` dosyasında, yalnızca Local ve WebDAV sunucuları paralel transfer destekler.
+- `sftp_provider.dart` dosyasında, 269. satırda, offset eksikliği ve beklenmeyen yazıcı (writer) nedeniyle veri bozulma riski bulunmaktadır.
+
+### Önerilen Çözümler
+1. Sunucu tarafı yeniden adlandırma (rename) desteklenmiyorsa, `move()` metodu yerine `copy` ve `delete` metotları kullanılmalıdır.
+2. `local_provider.dart` dosyasında, 1ms gecikme kaldırılmalıdır.
+3. `panel_controller.dart` dosyasında, izleyici için debounce mekanizması eklenmelidir.
+4. `file_operations_service.dart` ve `file_tree_inventory_service.dart` dosyalarında, hazırlık aşamasında throttle mekanizması eklenmelidir.
+5. `webdav_provider.dart` ve `nextcloud_provider.dart` dosyalarında, sunucu tarafı COPY işlemi desteklenmelidir.
+6. `ftp_provider.dart` dosyasında, `stat()` metodu optimize edilmelidir.
+7. `google_drive_provider.dart` dosyasında, yazma işlemi bellek kullanımını azaltacak şekilde optimize edilmelidir.
+8. `parallel_transfer_capable.dart` dosyasında, paralel transfer desteklenmeyen sunucular için destek eklenmelidir.
+9. `sftp_provider.dart` dosyasında, 269. satırda bulunan offset eksikliği ve beklenmeyen yazıcı nedeniyle veri bozulma riski giderilmelidir.
+
+Bu analiz sonucunda, geliştirme süreci daha verimli ve hedefe yönelik hale gelmiştir. Gelecek oturumlarda bu bulgulara dayanarak ilerlenecektir.
